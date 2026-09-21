@@ -62,6 +62,16 @@ All metrics use the `gatewai_` prefix (gateway) or `gatewai_relay_` prefix (rela
 | `gatewai_backend_circuit_opens_total` | counter | `model`, `backend` | Number of times a backend's circuit transitioned to open |
 | `gatewai_backend_circuit_skipped_total` | counter | `model`, `backend` | Requests that skipped a backend because its circuit was open |
 
+### Backend pools
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `gatewai_backend_pool_rate_limited_total` | counter | `pool`, `member` | Requests rejected by a pool's rate limit (`member` empty for a pool-wide rejection, set for a per-member one) |
+| `gatewai_backend_pool_concurrency_rejected_total` | counter | `pool` | Requests rejected because the pool's shared concurrency budget was exhausted |
+| `gatewai_backend_pool_rate_limit_errors_total` | counter | `pool` | Redis errors while checking a pool's rate limit (fail-open — request allowed through) |
+
+See [Service registry](../configure/service-registry.md#backend-pools-backend_pools) for `backend_pools` configuration.
+
 ### Usage tracking (top consumers)
 
 | Metric | Type | Labels | Description |

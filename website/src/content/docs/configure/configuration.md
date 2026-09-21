@@ -316,6 +316,20 @@ Scoped per consumer, so distinct or absent keys never collide — dedup only fir
 ## Services
 
 ```yaml
+backend_pools:
+  reranker-pool:
+    members:
+      - url: "http://backend-primary:8000"
+        weight: 90
+        model: "meta-llama/Meta-Llama-3-8B-Instruct"   # per-member model override
+        headers:
+          Authorization: "Bearer ${PRIMARY_TOKEN}"       # per-member header override
+      - url: "http://backend-canary:8000"
+        weight: 10
+        model: "meta-llama/Meta-Llama-3.1-8B-Instruct"
+        headers:
+          Authorization: "Bearer ${CANARY_TOKEN}"
+
 services:
   - type: audio                            # service type
     model: "whisper-large-v3"              # OpenAI model field
@@ -340,22 +354,12 @@ services:
 
     # Multi-backend routing (optional — replaces inference_url when set)
     # weight > 0 = eligible for weighted-random primary selection
-    # weight = 0 = fallback-only (tried after all weight>0 backends fail)
-    backends:
-      - url: "http://backend-primary:8000"
-        weight: 90
-        model: "meta-llama/Meta-Llama-3-8B-Instruct"   # per-backend model override
-        headers:
-          Authorization: "Bearer ${PRIMARY_TOKEN}"       # per-backend header override
-      - url: "http://backend-canary:8000"
-        weight: 10
-        model: "meta-llama/Meta-Llama-3.1-8B-Instruct"
-        headers:
-          Authorization: "Bearer ${CANARY_TOKEN}"
+    # weight = 0 = fallback-only (tried after all weight>0 members fail)
+    backend_pool: reranker-pool
 
     # LLM proxy (optional — activates when provider is set)
     provider: passthrough          # openai | anthropic | ollama | passthrough
-    backend_model: "meta-llama/Meta-Llama-3-8B-Instruct"  # default model rewrite; overridden by backends[].model
+    backend_model: "meta-llama/Meta-Llama-3-8B-Instruct"  # default model rewrite; overridden by a pool member's model
     response_cache_ttl: 3600       # seconds; 0 = disabled
 
     # Swagger spec (optional)
@@ -373,8 +377,9 @@ services:
 | `model` | no | `""` | OpenAI model field value for routing |
 | `default` | no | `false` | Fallback model when request omits `model` |
 | `operations` | no | `{}` | Map of operation name → URL paths |
-| `inference_url` | no | `""` | Backend base URL for direct proxy (single backend, legacy — use `backends` for multi-backend) |
-| `backends` | no | `[]` | List of backends with weighted routing. Takes precedence over `inference_url` when set. |
+| `inference_url` | no | `""` | Backend base URL for direct proxy (single backend, legacy — use `backend_pool` for multi-backend) |
+| `backend_pool` | no | `""` | Name of a `backend_pools` entry to route through. Takes precedence over `inference_url`; mutually exclusive with `backends`. |
+| `backends` | no | `[]` | **Deprecated**, use `backend_pools`/`backend_pool` instead. Legacy inline list of backends with weighted routing, kept for backward compatibility. |
 | `accepted_exts` | no | any | Allowed file extensions (e.g. `.mp3`) — async mode only |
 | `max_file_size_mb` | no | `100` | Max upload size in MB |
 | `inference_headers` | no | `{}` | HTTP headers injected on every sync-direct / LLM proxy request |
@@ -388,34 +393,62 @@ services:
 | `swagger_headers` | no | `{}` | HTTP headers for `swagger_url` fetch |
 | `deprecated` | no | `false` | Marks the model deprecated in `GET /v1/models` and the OpenAPI spec — see [Deprecating a model](../configure/service-registry#deprecating-a-model-deprecated). Informational only. |
 
-### `backends`
+### `backend_pools` / `backend_pool`
 
-Multi-backend list for blue/green, canary, or fallback routing. When set, takes precedence over `inference_url`.
+Named, reusable groups of backends for blue/green, canary, or fallback routing — and, when several services reference the same pool, a shared rate-limit / concurrency budget. `backend_pool` on a service takes precedence over `inference_url`; it's mutually exclusive with the legacy inline `backends` list.
 
 ```yaml
-backends:
-  - url: "http://backend-a:8000"
-    weight: 90       # weighted-random primary selection
-    model: "model-v1"   # overrides service-level backend_model for this backend
-    headers:            # overrides service-level inference_headers for this backend
-      Authorization: "Bearer ${TOKEN_A}"
-  - url: "http://backend-b:8000"
-    weight: 10
-    model: "model-v2"
-    headers:
-      Authorization: "Bearer ${TOKEN_B}"
-  - url: "http://backend-fallback:8000"
-    weight: 0          # fallback-only: tried after all weight>0 backends fail
+backend_pools:
+  chat-pool:
+    members:
+      - url: "http://backend-a:8000"
+        weight: 90       # weighted-random primary selection
+        model: "model-v1"   # overrides service-level backend_model for this member
+        headers:            # overrides service-level inference_headers for this member
+          Authorization: "Bearer ${TOKEN_A}"
+      - url: "http://backend-b:8000"
+        weight: 10
+        model: "model-v2"
+        headers:
+          Authorization: "Bearer ${TOKEN_B}"
+      - url: "http://backend-fallback:8000"
+        weight: 0          # fallback-only: tried after all weight>0 members fail
+    rate_limit: { rate: 50, period: 1s }   # optional pool-wide budget, shared by every service referencing this pool
+    max_concurrent: 30                      # optional pool-wide concurrency budget
+
+services:
+  - type: llm
+    model: "chat"
+    provider: passthrough
+    backend_pool: chat-pool
 ```
 
-**Per-backend fields:**
+**Per-member fields:**
 
 | Field | Description |
 |---|---|
 | `url` | Backend URL (required) |
 | `weight` | Routing weight. `0` = fallback-only (never primary-selected). |
-| `model` | Overrides service-level `backend_model` for this backend only. |
-| `headers` | HTTP headers injected on requests to this backend. Override `inference_headers`. |
+| `model` | Overrides service-level `backend_model` for this member only. |
+| `headers` | HTTP headers injected on requests to this member. Highest precedence, above the pool's own `headers` and the service's `inference_headers`. |
+| `rate_limit` | Optional per-member `rate`/`period` cap, checked on every backend attempt. |
+| `max_concurrent` | Optional per-member concurrency cap. |
+
+**Pool-level fields:**
+
+| Field | Description |
+|---|---|
+| `members` | List of pool members (required, ≥1) — see above. |
+| `headers` | Pool-level default headers, overridden by a member's own headers. |
+| `rate_limit` | Pool-wide `rate`/`period` budget shared across all members and all services referencing this pool. |
+| `max_concurrent` | Pool-wide concurrency budget, acquired once per client request, shared across all services referencing this pool. |
+| `priority_reserved_concurrent` | Slots of `max_concurrent` reserved for requests carrying `server.priority_header` — mirrors `services[].priority_reserved_sync`. |
+
+See [Service registry → Backend pools](../configure/service-registry#backend-pools-backend_pools) for the full write-up (semaphore/rate-limit semantics, circuit breaker interaction).
+
+### `backends` (deprecated)
+
+A service may still declare an inline `backends` list instead of `backend_pool` — same per-member fields as above (`url`, `weight`, `model`, `headers`), without pool-level sharing. It remains supported for backward compatibility but **will be removed in a future release**; use `backend_pools`/`backend_pool` for all new services.
 
 On network error or 5xx, the next backend is tried. On 4xx (including 401), the retry loop stops — client errors are not retried.
 

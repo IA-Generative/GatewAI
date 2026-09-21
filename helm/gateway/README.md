@@ -143,41 +143,46 @@ services:
 | `default` | `true` → used as fallback when `model` is omitted and multiple models are registered for the type. |
 | `deprecated` | `true` → marks the model deprecated. Surfaced in `GET /v1/models` (`capabilities.deprecated`) and as `deprecated: true` on the corresponding OpenAPI operations (per-model swagger doc always; a shared sync path only when every model on it is deprecated). Informational only — does not affect routing or availability. |
 | `operations` | Map of `operationName → [url-paths]`. All paths are indexed for sync routing. The first path of the selected operation is forwarded in async InputEvents. |
-| `inferenceURL` | Base URL of the Knative InferenceService predictor (cluster-local). The original request path is appended at runtime. Single-backend legacy — use `backends` for multi-backend. |
-| `backends` | List of backends with weighted routing. Takes precedence over `inferenceURL`. See below. |
+| `inferenceURL` | Base URL of the Knative InferenceService predictor (cluster-local). The original request path is appended at runtime. Single-backend legacy — use `backendPool` for multi-backend. |
 | `backendPool` | Name of a `backendPools[]` entry to route through instead of `inferenceURL`/`backends` — mutually exclusive with both. See below. |
+| `backends` | **Deprecated**, use `backendPools`/`backendPool` instead. Legacy inline list of backends with weighted routing, takes precedence over `inferenceURL`. Kept for backward compatibility only. |
 | `acceptedExts` | Allowed file extensions (e.g. `[".mp3", ".wav"]`). Empty or absent = all extensions accepted. |
 | `maxFileSizeMB` | Maximum upload size in MB. `0` or absent = 100 MB default. |
 | `inferenceHeaders` | HTTP headers injected on every request to the backend (sync-direct and LLM proxy). Values support `${VAR}` env expansion. |
 | `provider` | Activates LLM proxy mode: `openai`, `anthropic`, `ollama`, `passthrough`. Absent = legacy direct proxy. |
-| `backendModel` | Default model name sent to the backend (rewrites the `model` field in the request body). Overridden by `backends[].model`. |
+| `backendModel` | Default model name sent to the backend (rewrites the `model` field in the request body). Overridden by a `backendPools[].members[].model` (or legacy `backends[].model`). |
 | `responseCacheTTL` | Redis response cache TTL in seconds. `0` = disabled. LLM proxy only. |
 | `maxConcurrentSync` | Max simultaneous sync requests for this model across all replicas. `0` = unlimited. Returns `503` when full. |
 | `priorityReservedSync` | Slots of `maxConcurrentSync` reserved for requests carrying `server.priorityHeader`. `0` = no reservation. |
 | `swaggerURL` | Optional URL to an OpenAPI JSON spec for this service. Fetched once at startup; served at `GET /swagger/{type}/{model}`. Failures are logged and skipped. |
 | `swaggerHeaders` | Optional map of HTTP headers sent when fetching `swaggerURL`. Values support `${VAR}` env expansion. |
 
-#### `backends[]` fields
+#### Backend pools (`backendPools`)
+
+A named, load-balancer-style group of member backends, referenced from `services[]` by name via `backendPool: <name>` — instead of every service declaring its own `backends`/`inferenceURL`. Lets several service/model aliases (e.g. two `type: llm` entries with different `model` values) share one physical backend's auth headers, rate limit, and concurrency budget. This is also the preferred way to do blue/green, canary, or fallback routing for a *single* alias — the legacy inline `backends[]` list is deprecated.
 
 | Field | Description |
 |---|---|
-| `url` | Backend URL (required) |
-| `weight` | Routing weight. `0` = fallback-only (never primary-selected via weighted-random). |
-| `model` | Overrides `backendModel` for this specific backend — useful for canary deployments. |
-| `headers` | HTTP headers injected on requests to this backend. Override `inferenceHeaders`. Values support `${VAR}` env expansion. |
+| `members[]` | List of pool members (required, ≥1). |
+| `members[].url` | Backend URL (required). |
+| `members[].weight` | Routing weight. `0` = fallback-only (never primary-selected via weighted-random). |
+| `members[].model` | Overrides `backendModel` for this specific member — useful for canary deployments. |
+| `members[].headers` | HTTP headers injected on requests to this member. Highest precedence of the three header sources (below). Values support `${VAR}` env expansion. |
+| `members[].rateLimit` | Optional per-member `rate`/`period` cap, checked on every backend attempt. |
+| `members[].maxConcurrent` | Optional per-member concurrency cap. |
+| `headers` | Pool-level default headers, merged under `members[].headers`. Lowest precedence of the three header sources (below). |
+| `rateLimit` | Pool-wide `rate`/`period` budget shared across all members and all services referencing this pool. |
+| `maxConcurrent` | Pool-wide concurrency budget shared across all members and all services referencing this pool. Acquired once per client request. |
+| `priorityReservedConcurrent` | Slots of `maxConcurrent` reserved for requests carrying `server.priorityHeader` — mirrors `services[].priorityReservedSync`. |
 
-**Example — canary routing (90/10 split with per-backend auth):**
+**Mutually exclusive** with `backends`/`inferenceURL` on the referencing service. **Header precedence** (lowest → highest): service `inferenceHeaders` → `backendPools[].headers` → `backendPools[].members[].headers`.
+
+**Example — canary routing (90/10 split with per-member auth and a last-resort fallback):**
 
 ```yaml
-services:
-  - type: llm
-    model: "chat"
-    provider: passthrough
-    responseCacheTTL: 300
-    operations:
-      chat:
-        - "/v1/chat/completions"
-    backends:
+backendPools:
+  chat-canary:
+    members:
       - url: "http://vllm-stable.default.svc.cluster.local:8000"
         weight: 90
         model: "meta-llama/Meta-Llama-3-8B-Instruct"
@@ -188,25 +193,21 @@ services:
         model: "meta-llama/Meta-Llama-3.1-8B-Instruct"
         headers:
           Authorization: "Bearer ${VLLM_CANARY_TOKEN}"
+      - url: "http://vllm-fallback.default.svc.cluster.local:8000"
+        weight: 0   # last resort, only if stable and canary both return 5xx
+
+services:
+  - type: llm
+    model: "chat"
+    provider: passthrough
+    responseCacheTTL: 300
+    backendPool: chat-canary
+    operations:
+      chat:
+        - "/v1/chat/completions"
 ```
 
 Don't forget to inject the token env vars via `extraEnvVars`.
-
-#### Backend pools (`backendPools`)
-
-A named, load-balancer-style group of member backends, referenced from `services[]` by name via `backendPool: <name>` — instead of every service declaring its own `backends`/`inferenceURL`. Lets several service/model aliases (e.g. two `type: llm` entries with different `model` values) share one physical backend's auth headers, rate limit, and concurrency budget.
-
-| Field | Description |
-|---|---|
-| `members[]` | List of pool members (required, ≥1). Each has `url`, `weight`, optional `model`/`headers` — same semantics as `backends[]` above. |
-| `members[].rateLimit` | Optional per-member `rate`/`period` cap, checked on every backend attempt. |
-| `members[].maxConcurrent` | Optional per-member concurrency cap. |
-| `headers` | Pool-level default headers, merged under `members[].headers`. Lowest precedence of the three header sources (below). |
-| `rateLimit` | Pool-wide `rate`/`period` budget shared across all members and all services referencing this pool. |
-| `maxConcurrent` | Pool-wide concurrency budget shared across all members and all services referencing this pool. Acquired once per client request. |
-| `priorityReservedConcurrent` | Slots of `maxConcurrent` reserved for requests carrying `server.priorityHeader` — mirrors `services[].priorityReservedSync`. |
-
-**Mutually exclusive** with `backends`/`inferenceURL` on the referencing service. **Header precedence** (lowest → highest): service `inferenceHeaders` → `backendPools[].headers` → `backendPools[].members[].headers`.
 
 **Example — two aliases sharing one vLLM instance's rate limit and concurrency budget:**
 
@@ -548,7 +549,40 @@ The relay sidecar exposes its own `/metrics` endpoint (scraped separately, e.g. 
 | `GatewAI_relay_proxy_requests_total` | counter | `service_type`, `status` |
 | `GatewAI_relay_proxy_duration_seconds` | histogram | `service_type` |
 
-## Upgrade notes
+## Upgrade guide
+
+```bash
+# 1. Pull the latest chart
+helm repo update
+
+# 2. Review breaking changes — table below, and the version-specific notes further down
+#    https://github.com/Qatr-io/GatewAI/blob/main/CHANGELOG.md
+
+# 3. Upgrade
+helm upgrade gatewai-gateway GatewAI/gatewai-gateway -f values.yaml
+
+# 4. Verify rollout
+kubectl rollout status deployment/gatewai-gateway
+kubectl logs -l app=gatewai-gateway --tail=50
+
+# Rollback if needed
+helm rollback gatewai-gateway
+```
+
+### Breaking changes at a glance
+
+| Version | Change |
+|---|---|
+| 0.23.0 | `GET /v1/models`'s `backendModel` no longer reflects a per-backend override; `backendModels[]` removed (see [0.22.0 → 0.23.0](#0220--0230)) |
+| 0.20.1 | `PrometheusRule` alerts renamed, dropped the legacy `Kevent` prefix |
+| 0.17.0 | `guardrails.pii` boolean removed — use `guardrails.checks` |
+| 0.15.0 | Go module & Helm chart renamed: `kevent-gateway` → `gatewai-gateway` |
+| 0.14.0 | Kafka removed entirely — `syncTopic`/`syncPriority` also removed (0.13.0) |
+| 0.11.0 | `redis.pendingMaxAgeHours` → `redis.pendingMaxAge` (duration string); `lifecycle.jobTTL.success` → `lifecycle.jobTTL.completed` |
+| 0.8.0 | LLM metrics gained a `backend_model` label — update PromQL `by`/`without` clauses |
+| 0.7.0 | `api_key` removed from service config — use `inferenceHeaders` |
+
+**Upcoming:** the inline `services[].backends` list is deprecated in favor of [`backendPools`/`backendPool`](#backend-pools-backendpools) and will be removed in a future release — migrate now.
 
 ### 0.1.0 → 0.2.0
 
@@ -662,3 +696,42 @@ All shipped alerts also lost their legacy `Kevent` name prefix (e.g. `KeventGate
 - **`GET /-/usage/report`** (admin) — cross-consumer, calendar-aligned usage totals per service type, for finance/BI reporting; optional `total=true` sums all buckets.
 - **`POST /-/quota/reset`** (admin) — clears a consumer's rate-limit/token-budget Redis keys for one service type.
 - **`gatewai_relay_queue_depth{model,state}`** — new gauge exposing live relay queue depth.
+
+### 0.20.1 → 0.21.0
+
+No breaking changes.
+
+**New features:**
+- **`backend_model` exposed in `GET /v1/models`** — each model object now carries the real backend model it forwards to; a `backendModels[]` array lists every distinct backend model when a canary/mixed fleet serves one alias (**note:** this array was removed again in 0.23.0, see below).
+- **`services[].visibility`** — gate a model to specific `userTypes`/`groups`; hidden models are indistinguishable from non-existent ones for callers outside the audience.
+- **Processing-queue crash recovery (lease reaper)** — abandoned async jobs are requeued (then dead-lettered after `lifecycle.gc.maxReapAttempts`) instead of stuck forever.
+- **HMAC-signed webhooks** (`webhooks.signingSecret`) — `X-Gatewai-Signature` header for authenticity + replay protection.
+- **Distinct `410 Gone` / `expired` status** on `GET /jobs/{type}/{id}` once a job's retention TTL has passed (`jobs.expiredMarkerTtl`).
+- **Durable webhook delivery** — retries persist in Redis instead of an in-memory goroutine; dead-lettered after `webhooks.maxRetries`.
+- **Idempotency keys** on `POST /jobs/{type}` (`Idempotency-Key` header, `jobs.idempotencyTtl`).
+
+**Changed (non-breaking, but affects storage):**
+- **Redis persistence (AOF + RDB) is now enabled by default** in the bundled `redis-ha` subchart. Existing installs get a `PersistentVolume` on upgrade unless overridden — set `redis-ha.persistentVolume.enabled: false` to opt out (not recommended, see [Redis HA](#redis-ha)).
+
+### 0.21.0 → 0.22.0
+
+No breaking changes.
+
+**New features:**
+- **Model-backed guardrail detectors** (`services[].guardrails.models[]`) alongside the existing regex checks, with per-mode behaviour (`async`/shadow vs `sync`/inline) and a verdict cache.
+- **Output-stage guardrails** (`services[].guardrails.output`) with streaming enforcement (`flag`/`block`/`buffer`).
+- **Async result-stage guardrails** (`services[].guardrails.async`) — scans async job results (transcript, OCR, …).
+- **Per-backend circuit breaker** (`circuitBreaker`, opt-in) with optional active health probing; a model with all backends open is marked `capabilities.degraded: true`.
+- **Cross-model fallback** (`services[].fallbackModel`, opt-in).
+
+### 0.22.0 → 0.23.0
+
+**Breaking change:** `GET /v1/models`'s `backendModel` now sources **only** the service-level `backendModel` — a per-backend override (`backends[].model` or `backendPools[].members[].model`, for canary/mixed-fleet setups) is no longer surfaced in the models listing, though it still rewrites the outgoing request to that backend. The `backendModels[]` array (added in 0.21.0) is removed accordingly — update any tooling that parsed it.
+
+**New features:**
+- **`backendPools`** — see [Backend pools](#backend-pools-backendpools) above.
+- **Guardrail trace tagging** (`guardrail.flagged=true` + stage/action/detectors span attributes) and **flagged-sample records** for reviewing async/shadow detections.
+
+### Upcoming: `backends` removal
+
+The inline `services[].backends` list is **deprecated** as of 0.23.0 in favor of [`backendPools`/`backendPool`](#backend-pools-backendpools) — see the field reference above. It's still fully supported today, but will be removed in a future release. Migrate new and existing services now, including single-alias canary/blue-green/fallback setups (a pool with one referencing service still works).

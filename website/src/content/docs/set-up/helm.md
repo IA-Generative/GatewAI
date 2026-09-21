@@ -88,6 +88,46 @@ jobs:
 
 The relay's lease TTL is set in the relay config, not the gateway chart: `lease_ttl` (default `60s`) — see [Async processing](../relay/async).
 
+## Backend pools
+
+A named, load-balancer-style group of member backends referenced from `services[]` by name via `backendPool: <name>` — instead of every service declaring its own `backends`/`inferenceURL`. Lets several service/model aliases share one physical backend's auth headers, rate limit, and concurrency budget:
+
+```yaml
+config:
+  backendPools:
+    vllm-llama3:
+      members:
+        - url: "http://vllm-1.default.svc.cluster.local:8000"
+          weight: 3
+          headers:
+            Authorization: "Bearer ${VLLM_TOKEN}"
+        - url: "http://vllm-2.default.svc.cluster.local:8000"
+          weight: 1
+      rateLimit:
+        rate: 50
+        period: "1s"
+      maxConcurrent: 30
+      priorityReservedConcurrent: 5
+
+  services:
+    - type: llm
+      model: "gpt-4o"
+      provider: openai
+      backendPool: vllm-llama3
+      operations:
+        chat:
+          - "/v1/chat/completions"
+    - type: llm
+      model: "llama3-chat"
+      provider: openai
+      backendPool: vllm-llama3   # same pool, different alias — shares its budget
+      operations:
+        chat:
+          - "/v1/chat/completions"
+```
+
+`backendPool` is mutually exclusive with `backends`/`inferenceURL` on the same service. See [Service registry](../configure/service-registry.md#backend-pools-backend_pools) for the full field reference and the [Helm chart README](https://github.com/Qatr-io/GatewAI/blob/main/helm/gateway/README.md) for the complete `values.yaml` schema.
+
 ## ConfigMap hot reload
 
 The chart supports `configmap-reload` sidecar to trigger `POST /-/reload` automatically when the ConfigMap changes:

@@ -238,6 +238,54 @@ services:
 - Priority requests try the reserved pool (`gateway:semaphore:sync:{model}:priority`) first, then fall back to the shared pool once the reserved pool is full — so a priority request is never worse off than a normal one
 - This is capacity reservation, not queuing: a request still gets an immediate `200`/`503`, it just has a better chance of the former
 
+## Backend pools (`backend_pools`)
+
+A named, load-balancer-style group of member backends that several `services[]` entries can share via `backend_pool: <name>`, instead of each declaring its own `backends:`/`inference_url:`. Useful when the same physical backend serves more than one model alias — the pool centralizes auth headers and shares one rate-limit / concurrency budget across every service routed to it.
+
+```yaml
+backend_pools:
+  vllm-llama3:
+    members:
+      - url: "http://vllm-1.default.svc.cluster.local:8000"
+        weight: 3
+        headers:
+          Authorization: "Bearer ${VLLM_1_TOKEN}"
+        rate_limit: { rate: 20, period: 1s }   # optional per-member cap
+        max_concurrent: 10                      # optional per-member cap
+      - url: "http://vllm-2.default.svc.cluster.local:8000"
+        weight: 1
+    headers:                                    # pool-level default headers (lowest precedence)
+      X-Pool-Auth: "${VLLM_SHARED_KEY}"
+    rate_limit: { rate: 50, period: 1s }        # pool-wide shared budget across all members
+    max_concurrent: 30                          # pool-wide shared concurrency budget
+    priority_reserved_concurrent: 5             # mirrors services[].priority_reserved_sync
+
+services:
+  - type: llm
+    model: "gpt-4o"
+    backend_pool: vllm-llama3     # mutually exclusive with backends:/inference_url:
+    provider: openai
+    operations:
+      chat:
+        - "/v1/chat/completions"
+  - type: llm
+    model: "llama3-chat"
+    backend_pool: vllm-llama3     # same pool, different alias — shares its budget
+    provider: openai
+    operations:
+      chat:
+        - "/v1/chat/completions"
+```
+
+- **Mutually exclusive** with `backends:`/`inference_url:` on the same service — set exactly one, checked at config validation.
+- **Header precedence** (lowest → highest): service `inference_headers` → `backend_pools[].headers` → `backend_pools[].members[].headers`.
+- **Concurrency** is acquired once per logical client request — the same one-request-one-slot semantics as `max_concurrent_sync` above — via a dedicated `gateway:semaphore:pool:` Redis key namespace distinct from per-model semaphores.
+- **Rate limiting** is checked per backend attempt inside the retry loop: pool-wide and per-member budgets are both enforced (AND), and a rate-limited member is skipped in favor of the next one before falling back to an error.
+- **Circuit breaker** state is unaffected — it's already keyed by backend URL, so services sharing a pool already share breaker health.
+- Pool rate-limit/concurrency exhaustion is deliberately **not** reflected in `GET /v1/models`'s `capabilities.degraded` — it's transient backpressure, not a degraded backend; that stays circuit-breaker-only.
+
+See the [Helm chart](../set-up/helm.md#backend-pools) for the equivalent `values.yaml` schema and the [metrics reference](../reference/metrics.md#backend-pools) for `gatewai_backend_pool_*`.
+
 ## Hot reload
 
 The service registry is reloaded atomically via `POST /-/reload`. The HTTP router is swapped with the new registry. Infrastructure (S3, Redis) is not re-initialised.

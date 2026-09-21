@@ -426,37 +426,43 @@ services:
   #   inference_headers:
   #     Authorization: "Bearer ${VLLM_TOKEN}"
   #
-  # ── Multi-backend : blue/green, canary, fallback ──────────────────────────
-  # Replace inference_url with a backends list. Mutually exclusive: backends
-  # takes precedence when both are set.
+  # ── Multi-backend : blue/green, canary, fallback (via backend_pools) ──────
+  # Backend routing (weighted-random primary selection + fallback) lives on
+  # backend_pools members, referenced via backend_pool: <name> — see the
+  # "Backend pools" block above for the full member schema. The legacy inline
+  # `backends:` list on a service is still accepted for compatibility but is
+  # deprecated in favor of backend_pools; prefer backend_pool for new services.
   #
   # weight > 0 — eligible for primary selection (weighted random).
-  # weight = 0 — fallback-only: tried only if all weight>0 backends fail.
+  # weight = 0 — fallback-only: tried only if all weight>0 members fail.
   #
   # Blue/green  — weight: 100/0 ; flip to 0/100 to cut over.
   # Canary      — weight: 90/10 ; ramp up the new backend gradually.
   # Fallback    — weight: 100 primary + weight: 0 last-resort.
   #
+  # backend_pools:
+  #   gpt-4o-canary:
+  #     members:
+  #       - url: "http://vllm-stable.default.svc.cluster.local:8000"
+  #         weight: 90
+  #         model: "llama-3.1-8b"            # optional: real model name sent to this backend (overrides backend_model)
+  #         headers:                          # optional: per-backend headers (override inference_headers)
+  #           Authorization: "Bearer ${STABLE_API_KEY}"
+  #       - url: "http://vllm-canary.default.svc.cluster.local:8000"
+  #         weight: 10
+  #         model: "llama-3.2-8b"            # canary: different model version
+  #         headers:
+  #           Authorization: "Bearer ${CANARY_API_KEY}"
+  #       - url: "http://vllm-fallback.default.svc.cluster.local:8000"
+  #         weight: 0    # only used if both stable and canary return 5xx
+  #
   # - type: llm
   #   model: "gpt-4o"
   #   provider: openai
+  #   backend_pool: gpt-4o-canary       # 90/10 canary with fallback, from the pool above
   #   operations:
   #     chat:
   #       - "/v1/chat/completions"
-  #   # Canary: 90 % on stable, 10 % on canary endpoint.
-  #   backends:
-  #     - url: "http://vllm-stable.default.svc.cluster.local:8000"
-  #       weight: 90
-  #       model: "llama-3.1-8b"            # optional: real model name sent to this backend (overrides backend_model)
-  #       headers:                          # optional: per-backend headers (override inference_headers)
-  #         Authorization: "Bearer ${STABLE_API_KEY}"
-  #     - url: "http://vllm-canary.default.svc.cluster.local:8000"
-  #       weight: 10
-  #       model: "llama-3.2-8b"            # canary: different model version
-  #       headers:
-  #         Authorization: "Bearer ${CANARY_API_KEY}"
-  #     - url: "http://vllm-fallback.default.svc.cluster.local:8000"
-  #       weight: 0    # only used if both stable and canary return 5xx
   #
   # ── Shared backend pool : two model aliases, one budget ────────────────────
   # Both services below route to the same backend_pools entry (see "Backend

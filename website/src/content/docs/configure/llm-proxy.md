@@ -56,50 +56,62 @@ Tool-use fields (`tools`, `tool_choice`) are forwarded as-is on the request side
 
 ## Model aliases
 
-The `model` field in the service config acts as the client-facing alias. Set `backend_model` (service-level) or `backends[].model` (per-backend) to rewrite the `model` field in the request body before forwarding:
+The `model` field in the service config acts as the client-facing alias. Set `backend_model` (service-level) or a member's `model` (per-backend, via [`backend_pools`](service-registry.md#backend-pools-backend_pools)) to rewrite the `model` field in the request body before forwarding:
 
 ```yaml
-- type: llm
-  model: "llama3"            # clients send this
-  provider: passthrough
-  backend_model: "meta-llama/Meta-Llama-3-8B-Instruct"   # default for all backends
-  backends:
-    - url: "http://vllm-v1.default.svc.cluster.local:8000"
-      weight: 90
-    - url: "http://vllm-v2.default.svc.cluster.local:8000"
-      weight: 10
-      model: "meta-llama/Meta-Llama-3.1-8B-Instruct"   # overrides backend_model for this backend
+backend_pools:
+  llama3-multi:
+    members:
+      - url: "http://vllm-v1.default.svc.cluster.local:8000"
+        weight: 90
+      - url: "http://vllm-v2.default.svc.cluster.local:8000"
+        weight: 10
+        model: "meta-llama/Meta-Llama-3.1-8B-Instruct"   # overrides backend_model for this backend
+
+services:
+  - type: llm
+    model: "llama3"            # clients send this
+    provider: passthrough
+    backend_model: "meta-llama/Meta-Llama-3-8B-Instruct"   # default for all backends
+    backend_pool: llama3-multi
 ```
 
 Cache lookup uses the alias (`model`), so cache keys are stable regardless of which backend served the request or which `backend_model` was sent.
 
 ## Multi-backend routing
 
-Services can declare multiple backends with weighted-random primary selection and automatic fallback:
+Services can route to multiple backends with weighted-random primary selection and automatic fallback, via a [backend pool](service-registry.md#backend-pools-backend_pools):
 
 ```yaml
-- type: llm
-  model: "chat"
-  provider: passthrough
-  backends:
-    - url: "http://vllm-primary.default.svc.cluster.local:8000"
-      weight: 100          # weight > 0 → eligible for primary selection
-      model: "meta-llama/Meta-Llama-3-8B-Instruct"
-      headers:
-        Authorization: "Bearer ${PRIMARY_TOKEN}"
-    - url: "http://vllm-fallback.default.svc.cluster.local:8000"
-      weight: 0            # weight = 0 → tried only if all weight>0 backends fail
-      model: "meta-llama/Meta-Llama-3-8B-Instruct"
-      headers:
-        Authorization: "Bearer ${FALLBACK_TOKEN}"
+backend_pools:
+  chat-primary:
+    members:
+      - url: "http://vllm-primary.default.svc.cluster.local:8000"
+        weight: 100          # weight > 0 → eligible for primary selection
+        model: "meta-llama/Meta-Llama-3-8B-Instruct"
+        headers:
+          Authorization: "Bearer ${PRIMARY_TOKEN}"
+      - url: "http://vllm-fallback.default.svc.cluster.local:8000"
+        weight: 0            # weight = 0 → tried only if all weight>0 members fail
+        model: "meta-llama/Meta-Llama-3-8B-Instruct"
+        headers:
+          Authorization: "Bearer ${FALLBACK_TOKEN}"
+
+services:
+  - type: llm
+    model: "chat"
+    provider: passthrough
+    backend_pool: chat-primary
 ```
 
 **Routing rules:**
-- One backend is selected by weighted-random among `weight > 0` backends.
-- On network error or 5xx response, the next backend is tried (remaining `weight > 0` backends sorted by descending weight, then `weight = 0` backends).
+- One member is selected by weighted-random among `weight > 0` members.
+- On network error or 5xx response, the next member is tried (remaining `weight > 0` members sorted by descending weight, then `weight = 0` members).
 - On 4xx, the loop stops immediately — client errors are not retried.
-- `backend.headers` are applied after `inference_headers`, acting as per-backend overrides.
-- `backend.model` overrides the service-level `backend_model` for that specific backend.
+- A member's `headers` are applied after `inference_headers` (and the pool's own `headers`), acting as the highest-precedence override.
+- A member's `model` overrides the service-level `backend_model` for that specific backend.
+
+> A service may still declare an inline `backends:` list instead of `backend_pool` — it's accepted for backward compatibility but deprecated in favor of `backend_pools`, which additionally lets several services share one rate-limit/concurrency budget. Prefer `backend_pools` for new services.
 
 ## Response caching
 
