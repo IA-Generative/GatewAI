@@ -298,6 +298,25 @@ services:
     #   path: "/health"  # default; override if the backend uses a different path
     #   disabled: false  # set true to skip this model in health probes
 
+  # ── Example: real-time transcription over WebSocket ────────────────────────
+  # A `realtime` block proxies a bidirectional WebSocket to the backend through
+  # the gateway's policy layer: visibility/authz are enforced at the handshake,
+  # a per-consumer concurrent-session cap applies, streamed audio is metered as
+  # audio-seconds for usage/quota, and the transcript is shadow-scanned on close.
+  # - type: transcription
+  #   model: "nemotron-asr-streaming"
+  #   inference_url: "${ASR_STREAMING_URL:-http://nemotron-asr-streaming-predictor.default.svc.cluster.local}"
+  #   realtime:
+  #     path: "/v1/audio/stream"      # client-facing WS route; backend_path defaults to it
+  #     audio: { sample_rate: 16000, bytes_per_sample: 2, channels: 1 }  # PCM contract
+  #     max_session_seconds: 3600
+  #     max_audio_seconds: 7200
+  #     max_concurrent_per_consumer: 2
+  #     info_paths: ["/v1/config", "/v1/languages"]   # GET discovery endpoints, proxied
+  #   visibility: { user_types: ["sa"] }              # enforced at the handshake
+  #   guardrails:
+  #     output: { checks: [pii] }                     # transcript shadow-scanned (flag-only)
+
   # ── Example: add a second model variant for the same service type ──────────
   # - type: audio
   #   model: "whisper-large-v3-turbo"

@@ -246,6 +246,29 @@ Numeric national-ID patterns (NIR, SIREN/SIRET, SSN, DNI) have higher false-posi
 
 **Flagged-sample records** (`guardrails.flagged_samples`, opt-in per service): the async (shadow) detector fires off-path in a detached goroutine, after the request span has ended — span tagging can't reach it, so its detections (the main thing prod shadows: Prompt Guard 2 injection in `mode: async`) would be countable but not *reviewable*. When `guardrails.flagged_samples.enabled`, each async flag emits one correlated, PII-**redacted** record — `{event=guardrail.flagged_sample, trace_id, guardrail.stage/detector/categories/score, service_type, model, consumer, redacted_prompt}` (`guardrails.EmitFlaggedSample`) — on both async input sites (`/v1/*` LLM proxy and `POST /jobs` submit text). The prompt is redacted before it enters the record via `flagged_samples.redact` groups (default `[pii, secrets]` — over-redaction is safe for a review-only copy); `trace_id` is taken from the detached context so the sample still correlates back to its trace. It's a structured slog record, so where slog is bridged to OTLP logs (`opentelemetry.logs.enabled`) it lands in the operator's governed sink (Loki/Langfuse) whose retention enforces the sample TTL — no raw prompt is ever stored. This lets shadow-mode flags be calibrated before flipping a detector to enforce.
 
+### Realtime (WebSocket) streaming
+
+`internal/handler/realtime.go`: for bidirectional streaming backends (e.g. real-time speech-to-text) the gateway proxies a WebSocket connection through its own policy layer instead of an opaque APISIX passthrough. A service opts in with a `realtime` block; its WS `path` registers as a **GET (upgrade)** route (kept out of the sync POST index), resolved via `Registry.RouteRealtime`.
+
+```yaml
+services:
+  - type: transcription
+    model: nemotron-asr-streaming
+    inference_url: "http://nemotron-asr-streaming-predictor.<ns>.svc.cluster.local"
+    realtime:
+      path: /v1/audio/stream        # client-facing WS route (backend_path defaults to it)
+      audio: { sample_rate: 16000, bytes_per_sample: 2, channels: 1 }  # PCM contract, for audio-seconds
+      max_session_seconds: 3600
+      max_audio_seconds: 7200
+      max_concurrent_per_consumer: 2
+      info_paths: [ "/v1/config", "/v1/languages" ]   # GET discovery endpoints, proxied
+    visibility: { user_types: [ "sa" ] }              # enforced at the handshake
+    guardrails:
+      output: { checks: [ pii ] }                     # transcript shadow-scanned on close (flag-only)
+```
+
+Flow (`SyncHandler.ServeRealtimeWS`): resolve the service → enforce **visibility + authz before upgrading** (fail-closed) → **per-consumer concurrent-session cap** (`429` before upgrade; in-memory, per-replica soft bound) → accept the client WS, dial the backend WS (`http`→`ws`/`https`→`wss`, client query forwarded, header precedence `Authorization` → `inference_headers` → per-backend) → relay whole frames both ways preserving text/binary type, until either side closes, `max_session_seconds` (a context deadline) lapses, or `max_audio_seconds` trips. Client→backend **binary** bytes are metered into **audio-seconds** (`RealtimeSpec.BytesPerSecond`) → per-consumer usage (`TrackProcessingTime`, the realtime analogue of processing time) + Prometheus (`gatewai_realtime_*`). On close the accumulated transcript (backend `partial`/`final` frames) is shadow-scanned with the service's output-stage checks: a match logs + increments `gatewai_guardrails_total{stage=output,action=flag,result=flagged}`. Realtime guardrails are **flag-only** — block/redact on a live stream is out of scope (a false positive would kill a call). `info_paths` are plain GET reverse-proxied behind the same visibility/authz gates (`ServeRealtimeInfo`). Dependency: `github.com/coder/websocket`.
+
 ### Authentication
 
 `internal/auth/`: optional gateway-side authentication. **Absent `auth` block ⇒ no gateway auth** — identity is trusted from upstream headers (the default when an upstream reverse proxy handles auth). One mode per deployment via `auth.mode`:

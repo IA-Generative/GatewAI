@@ -601,6 +601,10 @@ type RealtimeConfig struct {
 	// MaxConcurrentPerConsumer caps simultaneous realtime sessions per consumer
 	// (0 = no cap). Enforced at the handshake.
 	MaxConcurrentPerConsumer int `yaml:"max_concurrent_per_consumer"`
+	// InfoPaths are plain HTTP GET discovery endpoints on the backend (e.g.
+	// "/v1/config", "/v1/languages") proxied through the gateway so clients can
+	// query the audio contract / supported languages behind the same policy layer.
+	InfoPaths []string `yaml:"info_paths"`
 }
 
 // RealtimeAudioConfig describes the client's binary audio frame format.

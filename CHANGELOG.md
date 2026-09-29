@@ -16,6 +16,12 @@ Versioning: each component is versioned independently — see tag conventions be
 
 ## Gateway
 
+### [Unreleased]
+
+#### Added
+
+- **Realtime WebSocket streaming services** (`services[].realtime`): the gateway now proxies bidirectional WebSocket connections (e.g. real-time speech-to-text) through its own policy layer instead of relying on an opaque APISIX passthrough. A realtime service declares a `realtime` block (WS `path`, optional `backend_path`, audio format, and caps); the gateway enforces model **visibility** and **authz** at the handshake (fail-closed — an unauthorized caller never opens a socket), applies a per-consumer **concurrent-session cap** (429 before upgrade), then relays frames both ways. Streamed audio is metered as **audio-seconds** (`bytes ÷ (sample_rate·bytes_per_sample·channels)`) into per-consumer usage (`TrackProcessingTime`) and Prometheus (`gatewai_realtime_sessions_total`, `gatewai_realtime_active_sessions`, `gatewai_realtime_audio_seconds_total`, `gatewai_realtime_session_duration_seconds`); `max_session_seconds`/`max_audio_seconds` bound a session. When the service configures output-stage checks, the backend transcript is **shadow-scanned** on close (flag-only — a match logs + increments the guardrail flag metric; block/redact are intentionally out of scope for a live stream). Optional GET discovery endpoints (`realtime.info_paths`, e.g. `/v1/config`, `/v1/languages`) are proxied behind the same gates. Adds the `github.com/coder/websocket` dependency.
+
 ### [v0.23.1] — 2026-09-28
 
 #### Fixed

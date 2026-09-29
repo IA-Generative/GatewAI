@@ -90,14 +90,15 @@ type Def struct {
 // RealtimeSpec is the resolved configuration for a WebSocket streaming service
 // (real-time transcription). Present only on realtime services.
 type RealtimeSpec struct {
-	Path                     string // client-facing WS route (e.g. "/v1/audio/stream")
-	BackendPath              string // path dialed on the backend (default = Path)
-	SampleRate               int    // audio samples/second (for audio-seconds metering)
-	BytesPerSample           int    // bytes per audio sample
-	Channels                 int    // audio channel count
-	MaxSessionSeconds        int    // wall-clock session cap; 0 = none
-	MaxAudioSeconds          int    // total streamed-audio cap; 0 = none
-	MaxConcurrentPerConsumer int    // simultaneous sessions per consumer; 0 = none
+	Path                     string   // client-facing WS route (e.g. "/v1/audio/stream")
+	BackendPath              string   // path dialed on the backend (default = Path)
+	SampleRate               int      // audio samples/second (for audio-seconds metering)
+	BytesPerSample           int      // bytes per audio sample
+	Channels                 int      // audio channel count
+	MaxSessionSeconds        int      // wall-clock session cap; 0 = none
+	MaxAudioSeconds          int      // total streamed-audio cap; 0 = none
+	MaxConcurrentPerConsumer int      // simultaneous sessions per consumer; 0 = none
+	InfoPaths                []string // GET discovery endpoints proxied to the backend
 }
 
 // BytesPerSecond returns the byte rate of the PCM stream, used to convert streamed
@@ -233,13 +234,14 @@ type wildcardRoute struct {
 
 // Registry maps (service_type, model) pairs to their runtime definitions.
 type Registry struct {
-	byTypeModel    map[string]map[string]*Def // type → model → Def
-	defaultByType  map[string]*Def            // type → default Def (when default: true in config)
-	bySync         map[string]map[string]*Def // exact openai_path → model → Def
-	defaultByPath  map[string]*Def            // exact openai_path → default Def
-	byPattern      []*pathPattern             // pattern paths containing {model}
-	byWildcard     []*wildcardRoute           // wildcard prefix paths ending with /*
-	realtimeByPath map[string]*Def            // WebSocket streaming path → Def (realtime services)
+	byTypeModel        map[string]map[string]*Def // type → model → Def
+	defaultByType      map[string]*Def            // type → default Def (when default: true in config)
+	bySync             map[string]map[string]*Def // exact openai_path → model → Def
+	defaultByPath      map[string]*Def            // exact openai_path → default Def
+	byPattern          []*pathPattern             // pattern paths containing {model}
+	byWildcard         []*wildcardRoute           // wildcard prefix paths ending with /*
+	realtimeByPath     map[string]*Def            // WebSocket streaming path → Def (realtime services)
+	realtimeInfoByPath map[string]*Def            // realtime GET discovery path → Def
 }
 
 // resolveRealtime converts a config.RealtimeConfig into a runtime RealtimeSpec,
@@ -258,6 +260,7 @@ func resolveRealtime(cfg *config.RealtimeConfig) *RealtimeSpec {
 		MaxSessionSeconds:        cfg.MaxSessionSeconds,
 		MaxAudioSeconds:          cfg.MaxAudioSeconds,
 		MaxConcurrentPerConsumer: cfg.MaxConcurrentPerConsumer,
+		InfoPaths:                cfg.InfoPaths,
 	}
 	if spec.BackendPath == "" {
 		spec.BackendPath = spec.Path
@@ -447,11 +450,12 @@ func NewRegistry(cfgs []config.ServiceConfig, opts ...RegistryOption) *Registry 
 		opt(ro)
 	}
 	r := &Registry{
-		byTypeModel:    make(map[string]map[string]*Def, len(cfgs)),
-		defaultByType:  make(map[string]*Def),
-		bySync:         make(map[string]map[string]*Def),
-		defaultByPath:  make(map[string]*Def),
-		realtimeByPath: make(map[string]*Def),
+		byTypeModel:        make(map[string]map[string]*Def, len(cfgs)),
+		defaultByType:      make(map[string]*Def),
+		bySync:             make(map[string]map[string]*Def),
+		defaultByPath:      make(map[string]*Def),
+		realtimeByPath:     make(map[string]*Def),
+		realtimeInfoByPath: make(map[string]*Def),
 	}
 	for _, cfg := range cfgs {
 		exts := make(map[string]struct{}, len(cfg.AcceptedExts))
@@ -507,6 +511,11 @@ func NewRegistry(cfgs []config.ServiceConfig, opts ...RegistryOption) *Registry 
 		// GET (upgrade) route — kept out of the sync (POST) index below.
 		if def.Realtime != nil && hasBackendFor(cfg) {
 			r.realtimeByPath[def.Realtime.Path] = def
+			for _, p := range def.Realtime.InfoPaths {
+				if p != "" {
+					r.realtimeInfoByPath[p] = def
+				}
+			}
 		}
 
 		// Build the sync routing index — one entry per configured path across all operations.
@@ -782,6 +791,23 @@ func (r *Registry) RouteRealtime(path string) (*Def, error) {
 		return d, nil
 	}
 	return nil, fmt.Errorf("no realtime service configured for path %q", path)
+}
+
+// RealtimeInfoPaths returns the GET discovery paths of all realtime services.
+func (r *Registry) RealtimeInfoPaths() []string {
+	paths := make([]string, 0, len(r.realtimeInfoByPath))
+	for p := range r.realtimeInfoByPath {
+		paths = append(paths, p)
+	}
+	return paths
+}
+
+// RouteRealtimeInfo resolves a realtime GET discovery path to its Def.
+func (r *Registry) RouteRealtimeInfo(path string) (*Def, error) {
+	if d, ok := r.realtimeInfoByPath[path]; ok {
+		return d, nil
+	}
+	return nil, fmt.Errorf("no realtime info endpoint configured for path %q", path)
 }
 
 // SyncPaths returns the unique OpenAI paths/patterns that have a sync backend.

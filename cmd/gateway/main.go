@@ -286,6 +286,13 @@ func buildRouter(
 			}
 			r.Get(path, syncHandler.ServeRealtimeWS)
 		}
+		for _, path := range reg.RealtimeInfoPaths() {
+			if reservedGatewayPath(path) {
+				slog.Warn("skipping realtime info path: conflicts with reserved gateway route", "path", path)
+				continue
+			}
+			r.Get(path, syncHandler.ServeRealtimeInfo)
+		}
 		if reg.HasRealtimeServices() {
 			slog.Info("realtime websocket proxy enabled", "paths", reg.RealtimePaths())
 		}

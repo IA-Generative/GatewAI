@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -344,5 +345,39 @@ func TestServeRealtimeWS_TranscriptGuardrailFlag(t *testing.T) {
 			t.Fatalf("transcript PII was not flagged (metric unchanged at %v)", testutil.ToFloat64(ctr))
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestServeRealtimeInfo_Passthrough(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/config" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ready":true,"sample_rate":16000}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer backend.Close()
+
+	reg := service.NewRegistry([]config.ServiceConfig{{
+		Type: "transcription", Model: "rt", InferenceURL: backend.URL,
+		Realtime: &config.RealtimeConfig{Path: "/v1/audio/stream", InfoPaths: []string{"/v1/config"}},
+	}})
+	h := NewSyncHandler(reg, "", nil, nil)
+	h.userTypeHeader = "X-User-Type"
+	gw := httptest.NewServer(http.HandlerFunc(h.ServeRealtimeInfo))
+	defer gw.Close()
+
+	resp, err := http.Get(gw.URL + "/v1/config")
+	if err != nil {
+		t.Fatalf("GET /v1/config: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `"sample_rate":16000`) {
+		t.Fatalf("unexpected body: %s", body)
 	}
 }

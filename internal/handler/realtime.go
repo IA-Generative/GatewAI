@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -281,6 +282,62 @@ func (h *SyncHandler) scanRealtimeTranscript(ctx context.Context, def *service.D
 			"service_type", def.Type, "model", def.Model, "consumer", consumer, "violations", found)
 		metrics.GuardrailsTotal.WithLabelValues(def.Type, def.Model, "output", "flag", "flagged").Inc()
 	}
+}
+
+// ServeRealtimeInfo proxies a realtime service's GET discovery endpoints
+// (e.g. /v1/config, /v1/languages) to the backend, behind the same visibility
+// and authz gates as the streaming path.
+func (h *SyncHandler) ServeRealtimeInfo(w http.ResponseWriter, r *http.Request) {
+	def, err := h.registry.RouteRealtimeInfo(r.URL.Path)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "unknown realtime endpoint")
+		return
+	}
+	if !checkModelVisible(w, r, def, h.userTypeHeader) {
+		return
+	}
+	if _, ok := h.checkAccess(w, r, def); !ok {
+		return
+	}
+	backendURL, backendHeaders, ok := realtimeBackend(def)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "no backend configured")
+		return
+	}
+	u, err := url.Parse(backendURL)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid backend URL")
+		return
+	}
+	u.Path = r.URL.Path
+	u.RawQuery = r.URL.RawQuery
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build request")
+		return
+	}
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	for k, v := range def.InferenceHeaders {
+		req.Header.Set(k, v)
+	}
+	for k, v := range backendHeaders {
+		req.Header.Set(k, v)
+	}
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "backend unavailable")
+		return
+	}
+	defer resp.Body.Close()
+	for k, vs := range resp.Header {
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 // relayWS copies whole WebSocket messages from src to dst, preserving the message
