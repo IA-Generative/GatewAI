@@ -434,4 +434,32 @@ var (
 		Name: "gatewai_auth_oauth2_errors_total",
 		Help: "OAuth2 token verification failures by operation and reason (invalid_token|unreachable).",
 	}, []string{"operation", "reason"})
+
+	// RealtimeSessionsTotal counts realtime (WebSocket) sessions by outcome:
+	// "completed" (clean close), "rejected" (handshake gate: quota/concurrency),
+	// or "error" (backend dial or transport failure).
+	RealtimeSessionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "gatewai_realtime_sessions_total",
+		Help: "Realtime WebSocket sessions by service_type, model and outcome.",
+	}, []string{"service_type", "model", "outcome"})
+
+	// RealtimeActiveSessions is the current number of open realtime sessions.
+	RealtimeActiveSessions = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "gatewai_realtime_active_sessions",
+		Help: "Currently open realtime WebSocket sessions.",
+	}, []string{"service_type", "model"})
+
+	// RealtimeAudioSecondsTotal counts seconds of audio streamed through realtime
+	// sessions (the quota-metered unit), derived from the client's PCM byte rate.
+	RealtimeAudioSecondsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "gatewai_realtime_audio_seconds_total",
+		Help: "Seconds of audio streamed through realtime sessions.",
+	}, []string{"service_type", "model", "user_type"})
+
+	// RealtimeSessionDuration measures realtime session wall-clock lifetime.
+	RealtimeSessionDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "gatewai_realtime_session_duration_seconds",
+		Help:    "Realtime WebSocket session duration in seconds.",
+		Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1800, 3600},
+	}, []string{"service_type", "model"})
 )

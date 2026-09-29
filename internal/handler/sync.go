@@ -54,6 +54,7 @@ type SyncHandler struct {
 	breaker           BackendHealth               // nil = no circuit-breaker-driven fallback
 	poolSemaphore     *concurrency.ModelSemaphore // nil = no backend_pools concurrency limit
 	poolLimiter       ratelimit.PoolChecker       // nil = no backend_pools rate limit
+	realtimeSessions  *realtimeSessionLimiter     // per-consumer concurrent realtime session cap
 }
 
 // WithPoolSemaphore sets the backend_pools concurrency limiter for sync calls.
@@ -92,9 +93,10 @@ func NewSyncHandler(
 		llm:            llm,
 		piiChecker:     guardrails.New(),
 		// Generous timeout for direct-proxy path.
-		httpClient:   &http.Client{Timeout: 15 * time.Minute},
-		retryBackoff: 500 * time.Millisecond,
-		maxBodyBytes: defaultMaxBodyBytes,
+		httpClient:       &http.Client{Timeout: 15 * time.Minute},
+		retryBackoff:     500 * time.Millisecond,
+		maxBodyBytes:     defaultMaxBodyBytes,
+		realtimeSessions: newRealtimeSessionLimiter(),
 	}
 }
 

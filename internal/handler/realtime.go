@@ -5,11 +5,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 
+	"gatewai/gateway/internal/metrics"
 	"gatewai/gateway/internal/service"
 )
 
@@ -17,13 +18,57 @@ import (
 // frames are both well under this; it guards against a runaway allocation.
 const realtimeReadLimit = 4 << 20 // 4 MiB
 
+// realtimeSessionLimiter caps concurrent realtime sessions per consumer. It is
+// per-replica (in-memory): with multiple gateway replicas the effective cap is
+// the configured value times the replica count. That's an acceptable soft bound
+// for a connection-count guard; cumulative audio quota is metered cross-replica
+// via the usage store.
+type realtimeSessionLimiter struct {
+	mu     sync.Mutex
+	active map[string]int
+}
+
+func newRealtimeSessionLimiter() *realtimeSessionLimiter {
+	return &realtimeSessionLimiter{active: make(map[string]int)}
+}
+
+// acquire reserves a session slot for consumer. max <= 0 means unlimited. An empty
+// consumer is never capped (anonymous callers are not tracked).
+func (l *realtimeSessionLimiter) acquire(consumer string, max int) bool {
+	if consumer == "" || max <= 0 {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.active[consumer] >= max {
+		return false
+	}
+	l.active[consumer]++
+	return true
+}
+
+func (l *realtimeSessionLimiter) release(consumer string, max int) {
+	if consumer == "" || max <= 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.active[consumer] > 0 {
+		l.active[consumer]--
+	}
+	if l.active[consumer] == 0 {
+		delete(l.active, consumer)
+	}
+}
+
 // ServeRealtimeWS proxies a bidirectional WebSocket connection (e.g. real-time
-// transcription) to the backend, applying the same access controls as the sync
-// path at the handshake: model visibility and authz are enforced BEFORE the
-// connection is upgraded, so an unauthorized caller never opens a socket.
+// transcription) to the backend, applying GatewAI's policy layer that an opaque
+// APISIX passthrough cannot: model visibility and authz are enforced BEFORE the
+// upgrade, a per-consumer concurrent-session cap is applied at the handshake, and
+// streamed audio-seconds are metered for usage/quota on close.
 //
-// Slice 1: transport + handshake gating + verbatim frame relay. Session quotas,
-// audio-seconds metering, and transcript guardrails are layered on in later slices.
+// Slices 1–2: transport + handshake gating + concurrency cap + audio-seconds
+// metering + usage/metrics. Transcript guardrails follow in a later slice.
 func (h *SyncHandler) ServeRealtimeWS(w http.ResponseWriter, r *http.Request) {
 	def, err := h.registry.RouteRealtime(r.URL.Path)
 	if err != nil {
@@ -34,6 +79,7 @@ func (h *SyncHandler) ServeRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "service is not realtime-capable")
 		return
 	}
+	rt := def.Realtime
 
 	// Gate before upgrading — fail closed on visibility/authz.
 	if !checkModelVisible(w, r, def, h.userTypeHeader) {
@@ -43,20 +89,33 @@ func (h *SyncHandler) ServeRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	consumer, userType := h.resolveConsumerAndType(r)
+
+	// Per-consumer concurrent-session cap, enforced before the upgrade.
+	if !h.realtimeSessions.acquire(consumer, rt.MaxConcurrentPerConsumer) {
+		metrics.RealtimeSessionsTotal.WithLabelValues(def.Type, def.Model, "rejected").Inc()
+		w.Header().Set("Retry-After", "5")
+		writeError(w, http.StatusTooManyRequests, "too many concurrent realtime sessions")
+		return
+	}
+	defer h.realtimeSessions.release(consumer, rt.MaxConcurrentPerConsumer)
+
 	backendURL, backendHeaders, ok := realtimeBackend(def)
 	if !ok {
+		metrics.RealtimeSessionsTotal.WithLabelValues(def.Type, def.Model, "error").Inc()
 		writeError(w, http.StatusInternalServerError, "no backend configured")
 		return
 	}
-	dialURL, err := realtimeDialURL(backendURL, def.Realtime.BackendPath, r.URL.RawQuery)
+	dialURL, err := realtimeDialURL(backendURL, rt.BackendPath, r.URL.RawQuery)
 	if err != nil {
+		metrics.RealtimeSessionsTotal.WithLabelValues(def.Type, def.Model, "error").Inc()
 		writeError(w, http.StatusInternalServerError, "invalid backend URL")
 		return
 	}
 
 	clientConn, err := websocket.Accept(w, r, nil)
 	if err != nil {
-		// Accept has already written the failure response to the client.
+		metrics.RealtimeSessionsTotal.WithLabelValues(def.Type, def.Model, "error").Inc()
 		slog.WarnContext(r.Context(), "realtime: client websocket accept failed", "error", err)
 		return
 	}
@@ -67,7 +126,7 @@ func (h *SyncHandler) ServeRealtimeWS(w http.ResponseWriter, r *http.Request) {
 	// returns) but keep our own cancel for teardown, plus the optional session cap.
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
 	defer cancel()
-	if secs := def.Realtime.MaxSessionSeconds; secs > 0 {
+	if secs := rt.MaxSessionSeconds; secs > 0 {
 		var stop context.CancelFunc
 		ctx, stop = context.WithTimeout(ctx, time.Duration(secs)*time.Second)
 		defer stop()
@@ -77,6 +136,7 @@ func (h *SyncHandler) ServeRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		HTTPHeader: realtimeDialHeaders(r, def.InferenceHeaders, backendHeaders),
 	})
 	if err != nil {
+		metrics.RealtimeSessionsTotal.WithLabelValues(def.Type, def.Model, "error").Inc()
 		slog.WarnContext(r.Context(), "realtime: backend dial failed", "url", dialURL, "error", err)
 		_ = clientConn.Write(ctx, websocket.MessageText, []byte(`{"type":"error","message":"backend unavailable"}`))
 		clientConn.Close(websocket.StatusInternalError, "backend unavailable")
@@ -85,24 +145,101 @@ func (h *SyncHandler) ServeRealtimeWS(w http.ResponseWriter, r *http.Request) {
 	backendConn.SetReadLimit(realtimeReadLimit)
 	defer backendConn.CloseNow()
 
-	// Relay both directions until either side closes or errors. The first pipe to
-	// end cancels ctx, unblocking the other.
+	// Count the session as a request in per-consumer usage (like the sync path).
+	if h.usageTracker != nil && consumer != "" {
+		h.usageTracker.TrackRequest(ctx, consumer, def.Type)
+		h.usageTracker.TrackActive(ctx, consumer)
+		h.usageTracker.TrackUserType(ctx, consumer, def.Type, userType)
+	}
+	metrics.RealtimeActiveSessions.WithLabelValues(def.Type, def.Model).Inc()
+	defer metrics.RealtimeActiveSessions.WithLabelValues(def.Type, def.Model).Dec()
+
+	sess := &realtimeSession{
+		start:         time.Now(),
+		bytesPerSec:   rt.BytesPerSecond(),
+		maxAudioBytes: int64(rt.MaxAudioSeconds) * int64(rt.BytesPerSecond()),
+	}
+
+	// Relay both directions until either side closes/errors or the audio cap trips.
 	done := make(chan struct{}, 2)
-	go func() { relayWS(ctx, clientConn, backendConn); done <- struct{}{} }() // client → backend
-	go func() { relayWS(ctx, backendConn, clientConn); done <- struct{}{} }() // backend → client
+	go func() { relayWS(ctx, clientConn, backendConn, sess.onClientFrame); done <- struct{}{} }() // client → backend
+	go func() { relayWS(ctx, backendConn, clientConn, nil); done <- struct{}{} }()                // backend → client
 	<-done
 	cancel()
 	clientConn.Close(websocket.StatusNormalClosure, "")
 	backendConn.Close(websocket.StatusNormalClosure, "")
+	<-done // wait for the second pump so session counters are stable
+
+	h.recordRealtimeUsage(ctx, def, consumer, userType, sess)
+}
+
+// realtimeSession accumulates per-session accounting.
+type realtimeSession struct {
+	start         time.Time
+	bytesPerSec   int
+	maxAudioBytes int64 // 0 = no cap
+
+	audioBytes  int64 // client → backend binary bytes (single writer: the client pump)
+	capExceeded bool
+}
+
+// onClientFrame meters audio on the client→backend direction and enforces the cap.
+func (s *realtimeSession) onClientFrame(typ websocket.MessageType, data []byte) error {
+	if typ != websocket.MessageBinary {
+		return nil
+	}
+	s.audioBytes += int64(len(data))
+	if s.maxAudioBytes > 0 && s.audioBytes > s.maxAudioBytes {
+		s.capExceeded = true
+		return errRealtimeAudioCap
+	}
+	return nil
+}
+
+func (s *realtimeSession) audioSeconds() float64 {
+	if s.bytesPerSec <= 0 {
+		return 0
+	}
+	return float64(s.audioBytes) / float64(s.bytesPerSec)
+}
+
+var errRealtimeAudioCap = &realtimeError{"audio duration cap exceeded"}
+
+type realtimeError struct{ msg string }
+
+func (e *realtimeError) Error() string { return e.msg }
+
+func (h *SyncHandler) recordRealtimeUsage(ctx context.Context, def *service.Def, consumer, userType string, sess *realtimeSession) {
+	audioSecs := sess.audioSeconds()
+	metrics.RealtimeSessionDuration.WithLabelValues(def.Type, def.Model).Observe(time.Since(sess.start).Seconds())
+	if audioSecs > 0 {
+		metrics.RealtimeAudioSecondsTotal.WithLabelValues(def.Type, def.Model, userType).Add(audioSecs)
+	}
+	outcome := "completed"
+	if sess.capExceeded {
+		outcome = "rejected"
+	}
+	metrics.RealtimeSessionsTotal.WithLabelValues(def.Type, def.Model, outcome).Inc()
+	if h.usageTracker != nil && consumer != "" && audioSecs > 0 {
+		// Audio-seconds are the realtime analogue of processing time.
+		h.usageTracker.TrackProcessingTime(ctx, consumer, def.Type, audioSecs)
+	}
 }
 
 // relayWS copies whole WebSocket messages from src to dst, preserving the message
-// type (text control/transcript frames vs binary audio), until an error occurs.
-func relayWS(ctx context.Context, src, dst *websocket.Conn) {
+// type (text control/transcript frames vs binary audio). onMsg, when non-nil, is
+// called with each message before it is forwarded; returning an error stops the
+// pump (and tears down the session), e.g. when the audio cap is exceeded.
+func relayWS(ctx context.Context, src, dst *websocket.Conn, onMsg func(websocket.MessageType, []byte) error) {
 	for {
 		typ, data, err := src.Read(ctx)
 		if err != nil {
 			return
+		}
+		if onMsg != nil {
+			if err := onMsg(typ, data); err != nil {
+				return
+			}
 		}
 		if err := dst.Write(ctx, typ, data); err != nil {
 			return
@@ -158,12 +295,7 @@ func realtimeDialHeaders(r *http.Request, inference, backend map[string]string) 
 	for k, v := range backend {
 		out.Set(k, v)
 	}
-	// Never forward the client's Upgrade/Connection/Sec-WebSocket-* headers.
-	for _, hop := range []string{"Upgrade", "Connection"} {
-		out.Del(hop)
-	}
-	if strings.EqualFold(out.Get("Connection"), "upgrade") {
-		out.Del("Connection")
-	}
+	out.Del("Upgrade")
+	out.Del("Connection")
 	return out
 }
