@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,8 +11,10 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"gatewai/gateway/internal/config"
+	"gatewai/gateway/internal/metrics"
 	"gatewai/gateway/internal/service"
 )
 
@@ -273,6 +276,72 @@ func TestServeRealtimeWS_AudioSecondsMetered(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("no audio-seconds usage recorded")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// transcriptWSBackend sends {"type":"ready"}, then a partial transcript frame
+// containing `text`, then a final frame, echoing nothing.
+func transcriptWSBackend(t *testing.T, partialText string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		ctx := r.Context()
+		_ = c.Write(ctx, websocket.MessageText, []byte(`{"type":"ready"}`))
+		_, _, _ = c.Read(ctx) // start
+		_ = c.Write(ctx, websocket.MessageText, []byte(`{"type":"partial","text":`+jsonString(partialText)+`}`))
+		_, _, _ = c.Read(ctx) // stop or disconnect
+		_ = c.Write(ctx, websocket.MessageText, []byte(`{"type":"final","text":`+jsonString(partialText)+`}`))
+		c.Close(websocket.StatusNormalClosure, "")
+	}))
+}
+
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func TestServeRealtimeWS_TranscriptGuardrailFlag(t *testing.T) {
+	backend := transcriptWSBackend(t, "please call me, my email is alice@example.com")
+	defer backend.Close()
+	gw, _ := realtimeTestServer(t, config.ServiceConfig{
+		Type: "transcription", Model: "rt", InferenceURL: backend.URL,
+		Realtime:   &config.RealtimeConfig{Path: "/v1/audio/stream"},
+		Guardrails: config.GuardrailsConfig{Output: &config.GuardrailsStageConfig{Checks: []string{"pii"}, Action: "flag"}},
+	})
+
+	ctr := metrics.GuardrailsTotal.WithLabelValues("transcription", "rt", "output", "flag", "flagged")
+	before := testutil.ToFloat64(ctr)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cc, _, err := websocket.Dial(ctx, wsURL(gw.URL, "/v1/audio/stream"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	if _, _, err := cc.Read(ctx); err != nil { // ready
+		t.Fatalf("read ready: %v", err)
+	}
+	_ = cc.Write(ctx, websocket.MessageText, []byte(`{"type":"start"}`))
+	if _, _, err := cc.Read(ctx); err != nil { // partial (with PII)
+		t.Fatalf("read partial: %v", err)
+	}
+	_ = cc.Write(ctx, websocket.MessageText, []byte(`{"type":"stop"}`))
+	_, _, _ = cc.Read(ctx) // final
+	cc.Close(websocket.StatusNormalClosure, "")
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if testutil.ToFloat64(ctr) >= before+1 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("transcript PII was not flagged (metric unchanged at %v)", testutil.ToFloat64(ctr))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

@@ -2,9 +2,11 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -160,16 +162,29 @@ func (h *SyncHandler) ServeRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		maxAudioBytes: int64(rt.MaxAudioSeconds) * int64(rt.BytesPerSecond()),
 	}
 
+	// Transcript guardrails: shadow-scan the backend's transcript text on close.
+	// Realtime is always flag/shadow — block/redact on a live stream is out of
+	// scope (a false positive would kill a call), so the output action is ignored.
+	guardChecks := def.Guardrails.Output.Checks
+	guardTranscript := def.Guardrails.Output.Enabled && len(guardChecks) > 0 && h.piiChecker != nil
+	var backendOnMsg func(websocket.MessageType, []byte) error
+	if guardTranscript {
+		backendOnMsg = sess.onBackendFrame
+	}
+
 	// Relay both directions until either side closes/errors or the audio cap trips.
 	done := make(chan struct{}, 2)
 	go func() { relayWS(ctx, clientConn, backendConn, sess.onClientFrame); done <- struct{}{} }() // client → backend
-	go func() { relayWS(ctx, backendConn, clientConn, nil); done <- struct{}{} }()                // backend → client
+	go func() { relayWS(ctx, backendConn, clientConn, backendOnMsg); done <- struct{}{} }()       // backend → client
 	<-done
 	cancel()
 	clientConn.Close(websocket.StatusNormalClosure, "")
 	backendConn.Close(websocket.StatusNormalClosure, "")
 	<-done // wait for the second pump so session counters are stable
 
+	if guardTranscript {
+		h.scanRealtimeTranscript(ctx, def, consumer, sess.transcript.String(), guardChecks)
+	}
 	h.recordRealtimeUsage(ctx, def, consumer, userType, sess)
 }
 
@@ -181,6 +196,33 @@ type realtimeSession struct {
 
 	audioBytes  int64 // client → backend binary bytes (single writer: the client pump)
 	capExceeded bool
+
+	transcript strings.Builder // backend → client transcript text (single writer: the backend pump)
+}
+
+// onBackendFrame accumulates transcript text from the backend's partial/final
+// frames (single writer: the backend pump), for a shadow guardrail scan on close.
+// It never blocks forwarding.
+func (s *realtimeSession) onBackendFrame(typ websocket.MessageType, data []byte) error {
+	if typ != websocket.MessageText {
+		return nil
+	}
+	var f struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(data, &f); err != nil {
+		return nil
+	}
+	switch f.Type {
+	case "partial":
+		s.transcript.WriteString(f.Text)
+	case "final":
+		if s.transcript.Len() == 0 {
+			s.transcript.WriteString(f.Text)
+		}
+	}
+	return nil
 }
 
 // onClientFrame meters audio on the client→backend direction and enforces the cap.
@@ -223,6 +265,21 @@ func (h *SyncHandler) recordRealtimeUsage(ctx context.Context, def *service.Def,
 	if h.usageTracker != nil && consumer != "" && audioSecs > 0 {
 		// Audio-seconds are the realtime analogue of processing time.
 		h.usageTracker.TrackProcessingTime(ctx, consumer, def.Type, audioSecs)
+	}
+}
+
+// scanRealtimeTranscript shadow-scans the accumulated transcript with the service's
+// output-stage checks: on a match it logs and increments the guardrail flag metric,
+// forwarding nothing differently (realtime guardrails are flag-only).
+func (h *SyncHandler) scanRealtimeTranscript(ctx context.Context, def *service.Def, consumer, transcript string, checks []string) {
+	if transcript == "" {
+		return
+	}
+	metrics.GuardrailsEvaluationsTotal.WithLabelValues(def.Type, def.Model, "output").Inc()
+	if found := h.piiChecker.ScanStrings([]string{transcript}, checks); len(found) > 0 {
+		slog.WarnContext(ctx, "realtime transcript flagged by guardrails",
+			"service_type", def.Type, "model", def.Model, "consumer", consumer, "violations", found)
+		metrics.GuardrailsTotal.WithLabelValues(def.Type, def.Model, "output", "flag", "flagged").Inc()
 	}
 }
 
