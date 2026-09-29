@@ -84,6 +84,26 @@ type Def struct {
 	HealthCheck      config.ServiceHealthConfig
 	Deprecated       bool                    // informational: surfaced in /v1/models and OpenAPI specs
 	Visibility       config.VisibilityConfig // audience gate; empty = public
+	Realtime         *RealtimeSpec           // resolved WebSocket streaming config; nil = not a realtime service
+}
+
+// RealtimeSpec is the resolved configuration for a WebSocket streaming service
+// (real-time transcription). Present only on realtime services.
+type RealtimeSpec struct {
+	Path                     string // client-facing WS route (e.g. "/v1/audio/stream")
+	BackendPath              string // path dialed on the backend (default = Path)
+	SampleRate               int    // audio samples/second (for audio-seconds metering)
+	BytesPerSample           int    // bytes per audio sample
+	Channels                 int    // audio channel count
+	MaxSessionSeconds        int    // wall-clock session cap; 0 = none
+	MaxAudioSeconds          int    // total streamed-audio cap; 0 = none
+	MaxConcurrentPerConsumer int    // simultaneous sessions per consumer; 0 = none
+}
+
+// BytesPerSecond returns the byte rate of the PCM stream, used to convert streamed
+// bytes into audio-seconds for quota metering. Zero when the format is unknown.
+func (s RealtimeSpec) BytesPerSecond() int {
+	return s.SampleRate * s.BytesPerSample * s.Channels
 }
 
 // IsRestricted reports whether the model is gated to a specific audience.
@@ -213,12 +233,49 @@ type wildcardRoute struct {
 
 // Registry maps (service_type, model) pairs to their runtime definitions.
 type Registry struct {
-	byTypeModel   map[string]map[string]*Def // type → model → Def
-	defaultByType map[string]*Def            // type → default Def (when default: true in config)
-	bySync        map[string]map[string]*Def // exact openai_path → model → Def
-	defaultByPath map[string]*Def            // exact openai_path → default Def
-	byPattern     []*pathPattern             // pattern paths containing {model}
-	byWildcard    []*wildcardRoute           // wildcard prefix paths ending with /*
+	byTypeModel    map[string]map[string]*Def // type → model → Def
+	defaultByType  map[string]*Def            // type → default Def (when default: true in config)
+	bySync         map[string]map[string]*Def // exact openai_path → model → Def
+	defaultByPath  map[string]*Def            // exact openai_path → default Def
+	byPattern      []*pathPattern             // pattern paths containing {model}
+	byWildcard     []*wildcardRoute           // wildcard prefix paths ending with /*
+	realtimeByPath map[string]*Def            // WebSocket streaming path → Def (realtime services)
+}
+
+// resolveRealtime converts a config.RealtimeConfig into a runtime RealtimeSpec,
+// applying audio-format defaults (16 kHz s16le mono). Returns nil when cfg is nil
+// or has no path (a realtime service must declare its WS path).
+func resolveRealtime(cfg *config.RealtimeConfig) *RealtimeSpec {
+	if cfg == nil || cfg.Path == "" {
+		return nil
+	}
+	spec := &RealtimeSpec{
+		Path:                     cfg.Path,
+		BackendPath:              cfg.BackendPath,
+		SampleRate:               cfg.Audio.SampleRate,
+		BytesPerSample:           cfg.Audio.BytesPerSample,
+		Channels:                 cfg.Audio.Channels,
+		MaxSessionSeconds:        cfg.MaxSessionSeconds,
+		MaxAudioSeconds:          cfg.MaxAudioSeconds,
+		MaxConcurrentPerConsumer: cfg.MaxConcurrentPerConsumer,
+	}
+	if spec.BackendPath == "" {
+		spec.BackendPath = spec.Path
+	}
+	if spec.SampleRate <= 0 {
+		spec.SampleRate = 16000
+	}
+	if spec.BytesPerSample <= 0 {
+		spec.BytesPerSample = 2
+	}
+	if spec.Channels <= 0 {
+		spec.Channels = 1
+	}
+	return spec
+}
+
+func hasBackendFor(cfg config.ServiceConfig) bool {
+	return cfg.InferenceURL != "" || len(cfg.Backends) > 0 || cfg.BackendPool != ""
 }
 
 // resolveStage converts a check list and action string into a GuardrailsStage.
@@ -390,10 +447,11 @@ func NewRegistry(cfgs []config.ServiceConfig, opts ...RegistryOption) *Registry 
 		opt(ro)
 	}
 	r := &Registry{
-		byTypeModel:   make(map[string]map[string]*Def, len(cfgs)),
-		defaultByType: make(map[string]*Def),
-		bySync:        make(map[string]map[string]*Def),
-		defaultByPath: make(map[string]*Def),
+		byTypeModel:    make(map[string]map[string]*Def, len(cfgs)),
+		defaultByType:  make(map[string]*Def),
+		bySync:         make(map[string]map[string]*Def),
+		defaultByPath:  make(map[string]*Def),
+		realtimeByPath: make(map[string]*Def),
 	}
 	for _, cfg := range cfgs {
 		exts := make(map[string]struct{}, len(cfg.AcceptedExts))
@@ -433,6 +491,7 @@ func NewRegistry(cfgs []config.ServiceConfig, opts ...RegistryOption) *Registry 
 			HealthCheck:          cfg.Health,
 			Deprecated:           cfg.Deprecated,
 			Visibility:           cfg.Visibility,
+			Realtime:             resolveRealtime(cfg.Realtime),
 		}
 
 		if r.byTypeModel[cfg.Type] == nil {
@@ -442,6 +501,12 @@ func NewRegistry(cfgs []config.ServiceConfig, opts ...RegistryOption) *Registry 
 
 		if cfg.Default {
 			r.defaultByType[cfg.Type] = def
+		}
+
+		// Realtime WebSocket services are routed by their WS path, registered as a
+		// GET (upgrade) route — kept out of the sync (POST) index below.
+		if def.Realtime != nil && hasBackendFor(cfg) {
+			r.realtimeByPath[def.Realtime.Path] = def
 		}
 
 		// Build the sync routing index — one entry per configured path across all operations.
@@ -695,6 +760,28 @@ func (r *Registry) RouteSync(openaiPath, model string) (*Def, error) {
 // HasSyncServices reports whether at least one service has sync mode configured.
 func (r *Registry) HasSyncServices() bool {
 	return len(r.bySync) > 0 || len(r.byPattern) > 0 || len(r.byWildcard) > 0
+}
+
+// HasRealtimeServices reports whether at least one WebSocket streaming service is configured.
+func (r *Registry) HasRealtimeServices() bool {
+	return len(r.realtimeByPath) > 0
+}
+
+// RealtimePaths returns the client-facing WebSocket paths of all realtime services.
+func (r *Registry) RealtimePaths() []string {
+	paths := make([]string, 0, len(r.realtimeByPath))
+	for p := range r.realtimeByPath {
+		paths = append(paths, p)
+	}
+	return paths
+}
+
+// RouteRealtime resolves a WebSocket streaming path to its Def.
+func (r *Registry) RouteRealtime(path string) (*Def, error) {
+	if d, ok := r.realtimeByPath[path]; ok {
+		return d, nil
+	}
+	return nil, fmt.Errorf("no realtime service configured for path %q", path)
 }
 
 // SyncPaths returns the unique OpenAI paths/patterns that have a sync backend.

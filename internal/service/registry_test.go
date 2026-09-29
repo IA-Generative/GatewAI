@@ -725,3 +725,50 @@ func TestRegistry_InlineBackends_PoolNameEmpty(t *testing.T) {
 		t.Errorf("expected empty PoolName for inline-backends config, got %q", def.PoolName)
 	}
 }
+
+func TestRegistry_Realtime_ResolveIndexAndDefaults(t *testing.T) {
+	reg := service.NewRegistry([]config.ServiceConfig{
+		{
+			Type:         "transcription",
+			Model:        "rt",
+			InferenceURL: "http://asr.svc.cluster.local",
+			Realtime:     &config.RealtimeConfig{Path: "/v1/audio/stream"},
+		},
+		{ // a normal sync service must not appear as realtime
+			Type:         "llm",
+			Model:        "chat",
+			InferenceURL: "http://vllm:8000",
+			Provider:     "openai",
+			Operations:   map[string][]string{"chat": {"/v1/chat/completions"}},
+		},
+	})
+
+	if !reg.HasRealtimeServices() {
+		t.Fatal("expected HasRealtimeServices() true")
+	}
+	if got := reg.RealtimePaths(); len(got) != 1 || got[0] != "/v1/audio/stream" {
+		t.Fatalf("RealtimePaths() = %v, want [/v1/audio/stream]", got)
+	}
+	def, err := reg.RouteRealtime("/v1/audio/stream")
+	if err != nil {
+		t.Fatalf("RouteRealtime error: %v", err)
+	}
+	if def.Realtime == nil {
+		t.Fatal("resolved def has nil Realtime")
+	}
+	// Audio-format defaults (16 kHz s16le mono) and BackendPath defaulting to Path.
+	rt := def.Realtime
+	if rt.SampleRate != 16000 || rt.BytesPerSample != 2 || rt.Channels != 1 {
+		t.Errorf("audio defaults wrong: %+v", rt)
+	}
+	if rt.BackendPath != "/v1/audio/stream" {
+		t.Errorf("BackendPath default = %q, want /v1/audio/stream", rt.BackendPath)
+	}
+	if bps := rt.BytesPerSecond(); bps != 32000 {
+		t.Errorf("BytesPerSecond() = %d, want 32000", bps)
+	}
+	// The sync service is not a realtime route.
+	if _, err := reg.RouteRealtime("/v1/chat/completions"); err == nil {
+		t.Error("sync path must not resolve as realtime")
+	}
+}

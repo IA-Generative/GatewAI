@@ -576,6 +576,38 @@ type ServiceConfig struct {
 	// public (visible to everyone). Enables beta-testing a model on the same API.
 	// Requires auth.mode (or server.user_type_header) so the caller can be identified.
 	Visibility VisibilityConfig `yaml:"visibility"`
+	// Realtime configures a bidirectional WebSocket streaming service (e.g. real-time
+	// speech-to-text). When set, the gateway proxies a WebSocket connection to the
+	// backend instead of a request/response call, applying auth/visibility/authz at
+	// the handshake and (later stages) session quotas, usage metering, and transcript
+	// guardrails. Mutually exclusive with the request/response fields' semantics —
+	// a realtime service is routed as a WS GET on Path, not a sync POST.
+	Realtime *RealtimeConfig `yaml:"realtime"`
+}
+
+// RealtimeConfig configures a WebSocket streaming service (real-time transcription).
+type RealtimeConfig struct {
+	// Path is the client-facing WebSocket route (e.g. "/v1/audio/stream").
+	Path string `yaml:"path"`
+	// BackendPath is the path dialed on the backend. Empty = same as Path.
+	BackendPath string `yaml:"backend_path"`
+	// Audio describes the wire format of the client's binary frames, used to meter
+	// streamed audio-seconds for quotas. Defaults suit 16 kHz s16le mono PCM.
+	Audio RealtimeAudioConfig `yaml:"audio"`
+	// MaxSessionSeconds bounds a single connection's wall-clock lifetime (0 = no cap).
+	MaxSessionSeconds int `yaml:"max_session_seconds"`
+	// MaxAudioSeconds bounds the total audio one connection may stream (0 = no cap).
+	MaxAudioSeconds int `yaml:"max_audio_seconds"`
+	// MaxConcurrentPerConsumer caps simultaneous realtime sessions per consumer
+	// (0 = no cap). Enforced at the handshake.
+	MaxConcurrentPerConsumer int `yaml:"max_concurrent_per_consumer"`
+}
+
+// RealtimeAudioConfig describes the client's binary audio frame format.
+type RealtimeAudioConfig struct {
+	SampleRate     int `yaml:"sample_rate"`      // samples per second (default 16000)
+	BytesPerSample int `yaml:"bytes_per_sample"` // bytes per sample (default 2 = s16le)
+	Channels       int `yaml:"channels"`         // channel count (default 1 = mono)
 }
 
 // VisibilityConfig gates a model to specific user types and/or groups.
