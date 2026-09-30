@@ -1269,9 +1269,9 @@ func TestUsageConfig_RetentionDuration(t *testing.T) {
 	}{
 		{"", 0},
 		{"24h", 24 * time.Hour},
-		{"365d", 0},    // "d" suffix not supported by Go — must use "8760h"
+		{"365d", 0}, // "d" suffix not supported by Go — must use "8760h"
 		{"8760h", 8760 * time.Hour},
-		{"30d", 0},     // invalid Go duration → 0
+		{"30d", 0}, // invalid Go duration → 0
 		{"720h", 720 * time.Hour},
 	}
 	for _, tc := range cases {
@@ -1582,5 +1582,67 @@ services:
 	_, err := config.LoadFromBytes([]byte(raw))
 	if err == nil || !strings.Contains(err.Error(), "is not defined in backend_pools") {
 		t.Errorf("expected unknown-pool error, got %v", err)
+	}
+}
+
+func TestValidate_RealtimePathConflicts(t *testing.T) {
+	cases := map[string]string{
+		"missing path": `
+services:
+  - type: transcription
+    model: rt
+    inference_url: http://asr
+    realtime: {}
+`,
+		"reserved /v1/models": `
+services:
+  - type: transcription
+    model: rt
+    inference_url: http://asr
+    realtime: { path: /v1/models }
+`,
+		"wildcard path": `
+services:
+  - type: transcription
+    model: rt
+    inference_url: http://asr
+    realtime: { path: "/v1/audio/*" }
+`,
+		"duplicate across services": `
+services:
+  - type: transcription
+    model: a
+    inference_url: http://asr
+    realtime: { path: /v1/audio/stream }
+  - type: transcription
+    model: b
+    inference_url: http://asr2
+    realtime: { path: /v1/audio/stream }
+`,
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := config.LoadFromBytes([]byte(raw)); err == nil {
+				t.Errorf("expected validation error for %q", name)
+			}
+		})
+	}
+
+	// A well-formed realtime service must pass.
+	ok := `
+s3:
+  endpoint: https://s3.example.com
+  region: us-east-1
+  bucket: my-bucket
+redis:
+  addr: "localhost:6379"
+services:
+  - type: transcription
+    model: rt
+    inference_url: http://asr
+    realtime: { path: /v1/audio/stream, info_paths: ["/v1/config"] }
+`
+	if _, err := config.LoadFromBytes([]byte(ok)); err != nil {
+		t.Errorf("valid realtime config rejected: %v", err)
 	}
 }

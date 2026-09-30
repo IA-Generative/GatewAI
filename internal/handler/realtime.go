@@ -116,7 +116,7 @@ func (h *SyncHandler) ServeRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientConn, err := websocket.Accept(w, r, nil)
+	clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: rt.AllowedOrigins})
 	if err != nil {
 		metrics.RealtimeSessionsTotal.WithLabelValues(def.Type, def.Model, "error").Inc()
 		slog.WarnContext(r.Context(), "realtime: client websocket accept failed", "error", err)
@@ -178,9 +178,15 @@ func (h *SyncHandler) ServeRealtimeWS(w http.ResponseWriter, r *http.Request) {
 	go func() { relayWS(ctx, clientConn, backendConn, sess.onClientFrame); done <- struct{}{} }() // client → backend
 	go func() { relayWS(ctx, backendConn, clientConn, backendOnMsg); done <- struct{}{} }()       // backend → client
 	<-done
-	cancel()
-	clientConn.Close(websocket.StatusNormalClosure, "")
+	// Close unblocks the peer goroutine cleanly; cancel() is the hard backstop.
+	// On an audio-cap trip tell the client why rather than a bare normal closure.
+	clientCode, clientReason := websocket.StatusNormalClosure, ""
+	if sess.capExceeded {
+		clientCode, clientReason = websocket.StatusPolicyViolation, "audio duration cap exceeded"
+	}
+	clientConn.Close(clientCode, clientReason)
 	backendConn.Close(websocket.StatusNormalClosure, "")
+	cancel()
 	<-done // wait for the second pump so session counters are stable
 
 	if guardTranscript {
@@ -227,15 +233,17 @@ func (s *realtimeSession) onBackendFrame(typ websocket.MessageType, data []byte)
 }
 
 // onClientFrame meters audio on the client→backend direction and enforces the cap.
+// The over-cap frame is not forwarded (relayWS returns on error), so its bytes are
+// not counted — only forwarded audio is metered.
 func (s *realtimeSession) onClientFrame(typ websocket.MessageType, data []byte) error {
 	if typ != websocket.MessageBinary {
 		return nil
 	}
-	s.audioBytes += int64(len(data))
-	if s.maxAudioBytes > 0 && s.audioBytes > s.maxAudioBytes {
+	if s.maxAudioBytes > 0 && s.audioBytes+int64(len(data)) > s.maxAudioBytes {
 		s.capExceeded = true
 		return errRealtimeAudioCap
 	}
+	s.audioBytes += int64(len(data))
 	return nil
 }
 
@@ -260,7 +268,7 @@ func (h *SyncHandler) recordRealtimeUsage(ctx context.Context, def *service.Def,
 	}
 	outcome := "completed"
 	if sess.capExceeded {
-		outcome = "rejected"
+		outcome = "audio_cap"
 	}
 	metrics.RealtimeSessionsTotal.WithLabelValues(def.Type, def.Model, outcome).Inc()
 	if h.usageTracker != nil && consumer != "" && audioSecs > 0 {

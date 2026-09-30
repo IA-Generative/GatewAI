@@ -437,10 +437,11 @@ var (
 
 	// RealtimeSessionsTotal counts realtime (WebSocket) sessions by outcome:
 	// "completed" (clean close), "rejected" (handshake gate: quota/concurrency),
-	// or "error" (backend dial or transport failure).
+	// "audio_cap" (max_audio_seconds tripped mid-session), or "error" (backend
+	// dial or transport failure).
 	RealtimeSessionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "gatewai_realtime_sessions_total",
-		Help: "Realtime WebSocket sessions by service_type, model and outcome.",
+		Help: "Realtime WebSocket sessions by service_type, model and outcome (completed|rejected|audio_cap|error).",
 	}, []string{"service_type", "model", "outcome"})
 
 	// RealtimeActiveSessions is the current number of open realtime sessions.

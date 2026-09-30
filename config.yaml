@@ -313,6 +313,7 @@ services:
   #     max_audio_seconds: 7200
   #     max_concurrent_per_consumer: 2
   #     info_paths: ["/v1/config", "/v1/languages"]   # GET discovery endpoints, proxied
+  #     # allowed_origins: ["app.example.org"]        # browser Origin allow-list; empty = same-host only
   #   visibility: { user_types: ["sa"] }              # enforced at the handshake
   #   guardrails:
   #     output: { checks: [pii] }                     # transcript shadow-scanned (flag-only)

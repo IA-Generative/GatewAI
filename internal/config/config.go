@@ -594,7 +594,10 @@ type RealtimeConfig struct {
 	// Audio describes the wire format of the client's binary frames, used to meter
 	// streamed audio-seconds for quotas. Defaults suit 16 kHz s16le mono PCM.
 	Audio RealtimeAudioConfig `yaml:"audio"`
-	// MaxSessionSeconds bounds a single connection's wall-clock lifetime (0 = no cap).
+	// MaxSessionSeconds bounds a single connection's wall-clock lifetime. 0 (the
+	// default) means no cap: a silent client that never sends FIN can then pin a
+	// session (and a concurrency slot) open until TCP keepalive reaps it, so set a
+	// finite value in production.
 	MaxSessionSeconds int `yaml:"max_session_seconds"`
 	// MaxAudioSeconds bounds the total audio one connection may stream (0 = no cap).
 	MaxAudioSeconds int `yaml:"max_audio_seconds"`
@@ -605,6 +608,12 @@ type RealtimeConfig struct {
 	// "/v1/config", "/v1/languages") proxied through the gateway so clients can
 	// query the audio contract / supported languages behind the same policy layer.
 	InfoPaths []string `yaml:"info_paths"`
+	// AllowedOrigins lists host patterns permitted by the WebSocket handshake's
+	// Origin check (e.g. "app.example.org", "*.example.org"). Empty (default)
+	// requires the Origin host to equal the request Host (same-origin) — which
+	// rejects browser clients served from a different host; list them here.
+	// Non-browser clients send no Origin and are always allowed.
+	AllowedOrigins []string `yaml:"allowed_origins"`
 }
 
 // RealtimeAudioConfig describes the client's binary audio frame format.
@@ -893,6 +902,34 @@ func (c *Config) validate() error {
 	for _, svc := range c.Services {
 		if svc.Type == "" {
 			return fmt.Errorf("a service has an empty type")
+		}
+	}
+	// Realtime (WebSocket) route validation: paths must be concrete, unique across
+	// realtime WS + info paths, and must not shadow the gateway's own routes.
+	seenRealtimePaths := map[string]bool{}
+	for _, svc := range c.Services {
+		rt := svc.Realtime
+		if rt == nil {
+			continue
+		}
+		if rt.Path == "" {
+			return fmt.Errorf("service %q: realtime.path is required", svc.Model)
+		}
+		allPaths := append([]string{rt.Path}, rt.InfoPaths...)
+		for _, p := range allPaths {
+			if !strings.HasPrefix(p, "/") {
+				return fmt.Errorf("service %q: realtime path %q must start with \"/\"", svc.Model, p)
+			}
+			if strings.ContainsAny(p, "{*") {
+				return fmt.Errorf("service %q: realtime path %q must be exact (no {model}/wildcard)", svc.Model, p)
+			}
+			if p == "/v1/models" || p == "/health" || p == "/metrics" {
+				return fmt.Errorf("service %q: realtime path %q conflicts with a reserved gateway route", svc.Model, p)
+			}
+			if seenRealtimePaths[p] {
+				return fmt.Errorf("realtime path %q is registered by more than one service", p)
+			}
+			seenRealtimePaths[p] = true
 		}
 	}
 	for svcType, userLimits := range c.RateLimits {

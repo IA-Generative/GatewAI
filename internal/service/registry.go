@@ -99,6 +99,7 @@ type RealtimeSpec struct {
 	MaxAudioSeconds          int      // total streamed-audio cap; 0 = none
 	MaxConcurrentPerConsumer int      // simultaneous sessions per consumer; 0 = none
 	InfoPaths                []string // GET discovery endpoints proxied to the backend
+	AllowedOrigins           []string // WebSocket Origin allow-list; empty = same-origin only
 }
 
 // BytesPerSecond returns the byte rate of the PCM stream, used to convert streamed
@@ -261,6 +262,7 @@ func resolveRealtime(cfg *config.RealtimeConfig) *RealtimeSpec {
 		MaxAudioSeconds:          cfg.MaxAudioSeconds,
 		MaxConcurrentPerConsumer: cfg.MaxConcurrentPerConsumer,
 		InfoPaths:                cfg.InfoPaths,
+		AllowedOrigins:           cfg.AllowedOrigins,
 	}
 	if spec.BackendPath == "" {
 		spec.BackendPath = spec.Path

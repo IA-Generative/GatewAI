@@ -148,6 +148,7 @@ var reservedGatewayPaths = []string{
 	"/openapi.yaml",
 	"/jobs",
 	"/usage",
+	"/v1/models",
 	"/-",
 }
 

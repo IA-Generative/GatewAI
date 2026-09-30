@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"bufio"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -25,6 +27,18 @@ type otelResponseWriter struct {
 func (rw *otelResponseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap exposes the wrapped writer so http.ResponseController and libraries that
+// walk the writer chain (e.g. the WebSocket upgrader) can reach optional
+// interfaces like http.Hijacker and http.Flusher that this wrapper does not
+// itself implement. Without it a WebSocket upgrade through this middleware fails.
+func (rw *otelResponseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
+
+// Hijack delegates to the underlying writer so a WebSocket upgrade works even for
+// callers that type-assert http.Hijacker directly rather than unwrapping.
+func (rw *otelResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(rw.ResponseWriter).Hijack()
 }
 
 // OtelMiddleware starts a server span for every request.
@@ -84,13 +98,13 @@ func StructuredLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 
 			args := []any{
-				"method",      r.Method,
-				"path",        r.URL.Path,
-				"status",      ww.Status(),
-				"bytes",       ww.BytesWritten(),
+				"method", r.Method,
+				"path", r.URL.Path,
+				"status", ww.Status(),
+				"bytes", ww.BytesWritten(),
 				"duration_ms", time.Since(start).Milliseconds(),
-				"request_id",  middleware.GetReqID(r.Context()),
-				"remote",      r.RemoteAddr,
+				"request_id", middleware.GetReqID(r.Context()),
+				"remote", r.RemoteAddr,
 			}
 			if sc := trace.SpanFromContext(r.Context()).SpanContext(); sc.IsValid() {
 				args = append(args, "trace_id", sc.TraceID().String(), "span_id", sc.SpanID().String())

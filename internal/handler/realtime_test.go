@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"go.opentelemetry.io/otel"
 
 	"github.com/coder/websocket"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -379,5 +383,85 @@ func TestServeRealtimeInfo_Passthrough(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), `"sample_rate":16000`) {
 		t.Fatalf("unexpected body: %s", body)
+	}
+}
+
+// TestServeRealtimeWS_BehindMiddlewareChain guards CRITICAL-1: the WebSocket
+// upgrade must succeed through the real router middleware (OtelMiddleware wraps
+// the ResponseWriter and must expose Hijack via Unwrap), not only when the
+// handler is mounted bare.
+func TestServeRealtimeWS_BehindMiddlewareChain(t *testing.T) {
+	backend := echoWSBackend(t)
+	defer backend.Close()
+	reg := service.NewRegistry([]config.ServiceConfig{{
+		Type: "transcription", Model: "rt", InferenceURL: backend.URL,
+		Realtime: &config.RealtimeConfig{Path: "/v1/audio/stream"},
+	}})
+	h := NewSyncHandler(reg, "", nil, nil)
+	h.userTypeHeader = "X-User-Type"
+
+	r := chi.NewRouter()
+	r.Use(OtelMiddleware(otel.Tracer("test")))
+	r.Use(StructuredLogger(slog.New(slog.NewTextHandler(io.Discard, nil))))
+	r.Get("/v1/audio/stream", h.ServeRealtimeWS)
+	gw := httptest.NewServer(r)
+	defer gw.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cc, _, err := websocket.Dial(ctx, wsURL(gw.URL, "/v1/audio/stream"), nil)
+	if err != nil {
+		t.Fatalf("WS upgrade failed behind middleware chain (CRITICAL-1 regression): %v", err)
+	}
+	defer cc.CloseNow()
+	if _, data, err := cc.Read(ctx); err != nil || string(data) != `{"type":"ready"}` {
+		t.Fatalf("expected ready frame, got %q err=%v", data, err)
+	}
+	cc.Close(websocket.StatusNormalClosure, "")
+}
+
+// TestServeRealtimeWS_AudioCapNotOverBilled guards HIGH-1: the over-cap frame is
+// dropped, so its bytes must not be metered — recorded audio-seconds stay at the
+// cap, not cap + overage.
+func TestServeRealtimeWS_AudioCapNotOverBilled(t *testing.T) {
+	backend := echoWSBackend(t)
+	defer backend.Close()
+	gw, h := realtimeTestServer(t, config.ServiceConfig{
+		Type: "transcription", Model: "rt", InferenceURL: backend.URL,
+		Realtime: &config.RealtimeConfig{Path: "/v1/audio/stream", MaxAudioSeconds: 1}, // cap = 32000 bytes
+	})
+	h.consumerHeader = "X-Consumer-Username"
+	ut := &rtUsageTracker{}
+	h.WithUsageTracker(ut)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	hdr := http.Header{"X-Consumer-Username": {"carol"}}
+	cc, _, err := websocket.Dial(ctx, wsURL(gw.URL, "/v1/audio/stream"), &websocket.DialOptions{HTTPHeader: hdr})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	if _, _, err := cc.Read(ctx); err != nil { // ready
+		t.Fatalf("read ready: %v", err)
+	}
+	// One 32000-byte frame is at the cap (forwarded), then a big frame trips it.
+	_ = cc.Write(ctx, websocket.MessageBinary, make([]byte, 32000))
+	_, _, _ = cc.Read(ctx)                                           // echo of first frame
+	_ = cc.Write(ctx, websocket.MessageBinary, make([]byte, 320000)) // 10s worth, dropped
+	_, _, _ = cc.Read(ctx)                                           // close from server (policy violation)
+	cc.CloseNow()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, secs, ok := ut.lastSeconds(); ok {
+			if secs > 1.01 {
+				t.Fatalf("over-cap frame was billed: recorded %v audio-seconds (want ~1.0)", secs)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no audio-seconds recorded")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
