@@ -650,3 +650,14 @@ otlpOperator:
         logs:
           receivers: [otlp]
           exporters: [debug]
+  envFrom: []
+    # - secretRef:
+    #     name: otlp-tenant
+  volumes: []
+    # - name: custom-ca
+    #   configMap:
+    #     name: openshift-ca
+  volumeMounts: []
+    # - name: custom-ca
+    #   mountPath: /etc/custom-ca
+    #   readOnly: true

@@ -39,4 +39,16 @@ spec:
   {{- end }}
   config:
     {{- toYaml .Values.otlpOperator.config | nindent 4 }}
+  {{- with .Values.otlpOperator.envFrom }}
+  envFrom:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.otlpOperator.volumes }}
+  volumes:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.otlpOperator.volumeMounts }}
+  volumeMounts:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}
