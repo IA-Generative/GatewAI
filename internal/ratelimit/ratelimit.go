@@ -32,7 +32,9 @@
 // layer (cannot enforce per-member limits without a stable identity).
 //
 // ResetQuota (used by the admin POST /-/quota/reset endpoint) clears a
-// consumer's rl:/trl:/ptrl:/rlp:/trlp: keys for one service type.
+// consumer's rl:/trl:/ptrl:/rlp:/trlp: keys for one service type, plus —
+// when an optional model is given — that consumer's per-model token budget
+// (trl:{consumer}:model:{model}:*, written by CheckModelTokens/AddModelTokens).
 package ratelimit
 
 import (
@@ -849,21 +851,31 @@ func (l *Limiter) AddProcessingTime(ctx context.Context, consumer, userType, ser
 type QuotaResetter interface {
 	// ResetQuota deletes all rate-limit and token-budget Redis keys for the
 	// given consumer/service_type pair (across all user types), returning the
-	// number of keys removed.
-	ResetQuota(ctx context.Context, consumer, serviceType string) (int, error)
+	// number of keys removed. When model is non-empty, it also deletes that
+	// consumer's per-model token-budget keys for the named model.
+	ResetQuota(ctx context.Context, consumer, serviceType, model string) (int, error)
 }
 
 // ResetQuota implements QuotaResetter. Deletes the service-level rate (rl:),
 // token (trl:), and processing-time (ptrl:) keys across all user types, plus
 // the exact policy-level rate (rlp:) and token (trlp:) keys, for one
-// consumer/service_type pair. Does not touch the in-flight concurrency slot
-// (jc:) — that counter self-heals via ReleaseSlot/TTL and isn't a configured
-// quota.
-func (l *Limiter) ResetQuota(ctx context.Context, consumer, serviceType string) (int, error) {
+// consumer/service_type pair. When model is non-empty, also deletes the
+// consumer's per-model token-budget keys (trl:{consumer}:model:{model}:*,
+// across all user types) — these are keyed by model, not service_type, so
+// the service_type-scoped patterns above never match them. Does not touch
+// the in-flight concurrency slot (jc:) — that counter self-heals via
+// ReleaseSlot/TTL and isn't a configured quota. Model/backend-pool-scoped
+// state (sync/pool concurrency semaphores, backend-pool rate limits, circuit
+// breaker) is shared across consumers and out of scope for a per-consumer
+// reset — see the package doc.
+func (l *Limiter) ResetQuota(ctx context.Context, consumer, serviceType, model string) (int, error) {
 	patterns := []string{
 		fmt.Sprintf("rl:%s:%s:*", consumer, serviceType),
 		fmt.Sprintf("trl:%s:%s:*", consumer, serviceType),
 		fmt.Sprintf("ptrl:%s:%s:*", consumer, serviceType),
+	}
+	if model != "" {
+		patterns = append(patterns, fmt.Sprintf("trl:%s:model:%s:*", consumer, model))
 	}
 
 	var keys []string
