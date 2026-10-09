@@ -830,7 +830,7 @@ func TestResetQuota_DeletesRateTokenAndProcessingKeysAcrossUserTypes(t *testing.
 		}
 	}
 
-	deleted, err := l.ResetQuota(ctx, "acme", "audio")
+	deleted, err := l.ResetQuota(ctx, "acme", "audio", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -846,12 +846,53 @@ func TestResetQuota_DeletesRateTokenAndProcessingKeysAcrossUserTypes(t *testing.
 
 func TestResetQuota_NoKeys_ReturnsZero(t *testing.T) {
 	l, _ := newLimiter(t, map[string]map[string]config.RateLimitConfig{}, "X-Consumer", "X-User-Type")
-	deleted, err := l.ResetQuota(context.Background(), "acme", "audio")
+	deleted, err := l.ResetQuota(context.Background(), "acme", "audio", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if deleted != 0 {
 		t.Fatalf("deleted = %d, want 0", deleted)
+	}
+}
+
+// TestResetQuota_WithModel_DeletesPerModelTokenBudget verifies that passing
+// a non-empty model also clears that consumer's trl:{consumer}:model:{model}:*
+// keys (set by AddModelTokens), which the service_type-scoped patterns never match.
+func TestResetQuota_WithModel_DeletesPerModelTokenBudget(t *testing.T) {
+	modelLimits := map[string]map[string]config.RateLimitConfig{
+		"whisper-large-v3": {"*": {TokenRate: 1000, TokenPeriod: "1m"}},
+	}
+	l, mr := newLimiterWithModelLimits(t, nil, modelLimits, "X-Consumer", "X-User-Type")
+	ctx := context.Background()
+
+	req := httptest.NewRequest("POST", "/", nil)
+	req.Header.Set("X-Consumer", "acme")
+	if err := l.AddModelTokens(ctx, req, "whisper-large-v3", 100); err != nil {
+		t.Fatal(err)
+	}
+
+	modelKey := "trl:acme:model:whisper-large-v3:*"
+	if !mr.Exists(modelKey) {
+		t.Fatalf("setup: expected key %q to exist before reset", modelKey)
+	}
+
+	// A reset without model still misses the per-model key.
+	if _, err := l.ResetQuota(ctx, "acme", "audio", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !mr.Exists(modelKey) {
+		t.Fatal("expected per-model key to survive a reset with no model param")
+	}
+
+	deleted, err := l.ResetQuota(ctx, "acme", "audio", "whisper-large-v3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted = %d, want 1", deleted)
+	}
+	if mr.Exists(modelKey) {
+		t.Fatal("expected per-model key to be deleted once model param is set")
 	}
 }
 
@@ -878,7 +919,7 @@ func TestResetQuota_DoesNotAffectOtherConsumersOrServiceTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := l.ResetQuota(ctx, "acme", "audio"); err != nil {
+	if _, err := l.ResetQuota(ctx, "acme", "audio", ""); err != nil {
 		t.Fatal(err)
 	}
 

@@ -600,11 +600,12 @@ func quotaResetPathItem() map[string]any {
 			"tags":        []string{"Admin"},
 			"summary":     "Admin: reset a consumer's quota for a service type",
 			"operationId": "resetQuota",
-			"description": "Deletes the rate-limit and token-budget Redis keys for one consumer/service_type pair, across all user types, so the next request starts a fresh window. Restricted to the `/-/` admin namespace — protect with upstream auth.\n\n" +
-				"**Example:** `POST /-/quota/reset?consumer=acme&type=audio`",
+			"description": "Deletes the rate-limit and token-budget Redis keys for one consumer/service_type pair, across all user types, so the next request starts a fresh window. With the optional `model` param, also deletes that consumer's per-model token budget, which is keyed by model rather than service_type and is otherwise untouched by a reset. Restricted to the `/-/` admin namespace — protect with upstream auth.\n\n" +
+				"**Example:** `POST /-/quota/reset?consumer=acme&type=audio&model=whisper-large-v3`",
 			"parameters": []any{
 				map[string]any{"name": "consumer", "in": "query", "required": true, "description": "Consumer identifier (as set by consumer_header)", "schema": map[string]any{"type": "string"}},
 				map[string]any{"name": "type", "in": "query", "required": true, "description": "Service type, e.g. \"audio\", \"llm\"", "schema": map[string]any{"type": "string"}},
+				map[string]any{"name": "model", "in": "query", "required": false, "description": "Also reset this consumer's per-model token budget", "schema": map[string]any{"type": "string"}},
 			},
 			"responses": map[string]any{
 				"200": map[string]any{
@@ -616,6 +617,7 @@ func quotaResetPathItem() map[string]any {
 								"properties": map[string]any{
 									"consumer":     map[string]any{"type": "string"},
 									"type":         map[string]any{"type": "string"},
+									"model":        map[string]any{"type": "string"},
 									"deleted_keys": map[string]any{"type": "integer"},
 								},
 							},
