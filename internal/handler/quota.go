@@ -11,7 +11,7 @@ import (
 
 // QuotaResetter is implemented by *ratelimit.Limiter.
 type QuotaResetter interface {
-	ResetQuota(ctx context.Context, consumer, serviceType string) (int, error)
+	ResetQuota(ctx context.Context, consumer, serviceType, model string) (int, error)
 }
 
 // QuotaHandler serves POST /-/quota/reset.
@@ -33,9 +33,14 @@ func NewQuotaHandler(resetter QuotaResetter) *QuotaHandler {
 //
 //	consumer (required) – consumer identifier (as set by consumer_header)
 //	type     (required) – service type, e.g. "audio", "llm"
+//	model    (optional) – also reset this consumer's per-model token budget
+//	                       (trl:{consumer}:model:{model}:*), which is keyed by
+//	                       model rather than service type and is otherwise
+//	                       untouched by a reset
 func (h *QuotaHandler) ResetQuota(w http.ResponseWriter, r *http.Request) {
 	consumer := r.URL.Query().Get("consumer")
 	serviceType := r.URL.Query().Get("type")
+	model := r.URL.Query().Get("model")
 	if consumer == "" {
 		writeError(w, http.StatusBadRequest, "query param 'consumer' is required")
 		return
@@ -45,22 +50,27 @@ func (h *QuotaHandler) ResetQuota(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deleted, err := h.resetter.ResetQuota(r.Context(), consumer, serviceType)
+	deleted, err := h.resetter.ResetQuota(r.Context(), consumer, serviceType, model)
 	if err != nil {
-		slog.ErrorContext(r.Context(), "admin quota reset failed", "consumer", consumer, "type", serviceType, "error", err)
+		slog.ErrorContext(r.Context(), "admin quota reset failed", "consumer", consumer, "type", serviceType, "model", model, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to reset quota")
 		return
 	}
 
 	metrics.QuotaResetsTotal.WithLabelValues(serviceType).Inc()
-	slog.InfoContext(r.Context(), "admin quota reset", "consumer", consumer, "type", serviceType, "deleted_keys", deleted)
+	slog.InfoContext(r.Context(), "admin quota reset", "consumer", consumer, "type", serviceType, "model", model, "deleted_keys", deleted)
+
+	resp := map[string]any{
+		"consumer":     consumer,
+		"type":         serviceType,
+		"deleted_keys": deleted,
+	}
+	if model != "" {
+		resp["model"] = model
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(map[string]any{
-		"consumer":     consumer,
-		"type":         serviceType,
-		"deleted_keys": deleted,
-	})
+	_ = enc.Encode(resp)
 }
