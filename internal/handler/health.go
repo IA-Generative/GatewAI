@@ -83,7 +83,7 @@ func NewHealthHandler(snapshotFn func(context.Context) (*health.Snapshot, error)
 		aggStatus := aggregateStatus(backends)
 
 		w.Header().Set("Content-Type", "application/json")
-		if strict && aggStatus != "up" {
+		if strict && (aggStatus == "down" || aggStatus == "partial") {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 
@@ -99,29 +99,37 @@ func NewHealthHandler(snapshotFn func(context.Context) (*health.Snapshot, error)
 }
 
 // aggregateStatus derives the overall health from a backends map.
-//   - "up"      — at least one backend probed, all are up
-//   - "partial" — some backends up, some down (≥2 backends)
-//   - "down"    — all probed backends are down
+//   - "up"      — at least one backend probed, all are up (dormant ones ignored)
+//   - "dormant" — all backends are dormant (scale_to_zero, not probed)
+//   - "partial" — some backends up or dormant, at least one down
+//   - "down"    — all probed backends are down (dormant ones ignored)
 //   - "unknown" — nothing was probed (empty map)
+//
+// "dormant" is not an error: the backend is expected to be at zero replicas and
+// will wake on the first real request. It does not trigger a 500 in strict mode.
 func aggregateStatus(backends map[string]string) string {
 	if len(backends) == 0 {
 		return "unknown"
 	}
-	var up, down int
+	var up, down, dormant int
 	for _, s := range backends {
 		switch s {
 		case "up":
 			up++
 		case "down":
 			down++
+		case "dormant":
+			dormant++
 		}
 	}
 	switch {
-	case down > 0 && up > 0:
+	case down > 0 && (up > 0 || dormant > 0):
 		return "partial"
 	case down > 0:
 		return "down"
-	default:
+	case up > 0:
 		return "up"
+	default:
+		return "dormant"
 	}
 }
