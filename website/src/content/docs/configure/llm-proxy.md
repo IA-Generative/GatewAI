@@ -78,6 +78,31 @@ services:
 
 Cache lookup uses the alias (`model`), so cache keys are stable regardless of which backend served the request or which `backend_model` was sent.
 
+## Canonical model (version reveal)
+
+While `backend_model` controls the id sent **to** the backend, `canonical_model` controls the id reported **back** to the client: when set, the proxy rewrites the response `model` field to it (on both non-streaming and streaming responses) instead of passing through the raw backend id. It is also surfaced in `GET /v1/models` as `canonical_model`.
+
+This enables version-pinned naming on top of floating aliases, the way hosted APIs do it — a floating alias reveals the concrete pinned version that served the request, while a pin reports itself:
+
+```yaml
+services:
+  # Floating alias — always the latest; response reveals which version answered.
+  - type: llm
+    model: "code"
+    provider: passthrough
+    canonical_model: "code-1.0"
+    backend_pool: qwen3-coder
+  # Pinned version — immutable name; reports itself.
+  - type: llm
+    model: "code-1.0"
+    provider: passthrough
+    canonical_model: "code-1.0"
+    backend_model: "Qwen/Qwen3.8-27B-FP8"   # also shown in GET /v1/models
+    backend_pool: qwen3-coder
+```
+
+A request to either `code` or `code-1.0` returns `"model": "code-1.0"` in the response. Empty `canonical_model` = the backend's own model id is passed through unchanged (the default). Pair it with `deprecated: true` on retiring names to run old and new aliases side by side during a migration window.
+
 ## Multi-backend routing
 
 Services can route to multiple backends with weighted-random primary selection and automatic fallback, via a [backend pool](service-registry.md#backend-pools-backend_pools):

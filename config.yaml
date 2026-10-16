@@ -510,6 +510,11 @@ services:
   # (as `backend_model`) in GET /v1/models so developers can see what runs behind
   # each alias.
   #
+  # canonical_model is reported back in the response "model" field (and surfaced in
+  # GET /v1/models) instead of the raw backend id — so a floating alias reveals the
+  # pinned version that served the request (e.g. a call to "code" reports "code-1.0")
+  # and a pin reports itself. Empty = the backend's own model id is passed through.
+  #
   # visibility gates a model to specific audiences. A restricted model is filtered
   # out of GET /v1/models — and returns 404 on /v1/* and /jobs — for callers outside
   # its audience, so a hidden model is indistinguishable from a non-existent one.
@@ -523,6 +528,7 @@ services:
   #   model: "next-gen"                 # stable public alias
   #   provider: passthrough
   #   backend_model: "llama-3.3-70b"    # real model surfaced in GET /v1/models
+  #   canonical_model: "next-gen-1.0"   # version reported back in the response "model"
   #   operations:
   #     chat:
   #       - "/v1/chat/completions"
