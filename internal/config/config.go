@@ -539,6 +539,13 @@ type ServiceConfig struct {
 	// expected identifier (e.g. "meta-llama/Meta-Llama-3-8B-Instruct" for vLLM).
 	// Only applied when Provider is set. Empty means the alias is forwarded as-is.
 	BackendModel string `yaml:"backend_model"`
+	// CanonicalModel is the version-pinned name this entry resolves to, reported
+	// back to the client in the response "model" field instead of the raw backend
+	// model id. Lets a floating alias (e.g. "code") reveal the real pinned version
+	// that served the request (e.g. "code-1.0"); a pin points at itself. Applied on
+	// the LLM-proxy path (Provider set), to both streaming and non-streaming
+	// responses. Empty = response model is left as the backend returned it.
+	CanonicalModel string `yaml:"canonical_model"`
 	// FallbackModel is another model (on the same sync path) to route to when this
 	// model's backends are all circuit-open (requires circuit_breaker.enabled).
 	// Opt-in; empty = no fallback. The caller must also be allowed to use it

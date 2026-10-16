@@ -382,6 +382,92 @@ func TestServeJSON_BackendModel_NotRewritten_WhenEmpty(t *testing.T) {
 	}
 }
 
+func TestServeJSON_CanonicalModel_RevealedInResponse(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		// Backend echoes the raw backend model id.
+		io.WriteString(w, `{"id":"chatcmpl-1","object":"chat.completion","model":"Qwen/Qwen3.8-27B-FP8","choices":[{"index":0,"message":{"role":"assistant","content":"Hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3}}`)
+	}))
+	defer backend.Close()
+
+	reg := provider.NewRegistry()
+	h := New(cache.NewNoop(), reg, &http.Client{Timeout: 5 * time.Second}, "", metrics.NoopTracker{}, AuditConfig{}, nil)
+
+	def := llmDef("passthrough", "Qwen/Qwen3.8-27B-FP8", 0)
+	def.CanonicalModel = "code-1.0"
+	setBackend(def, backend.URL)
+
+	rr := doServeJSON(h, def, chatBody)
+
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response not JSON: %v", err)
+	}
+	if got := resp["model"]; got != "code-1.0" {
+		t.Errorf("response model should be canonical pin; got %v", got)
+	}
+}
+
+func TestServeJSON_CanonicalModel_Empty_LeavesResponseModel(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, `{"id":"chatcmpl-1","object":"chat.completion","model":"Qwen/Qwen3.8-27B-FP8","choices":[{"index":0,"message":{"role":"assistant","content":"Hi"}}]}`)
+	}))
+	defer backend.Close()
+
+	reg := provider.NewRegistry()
+	h := New(cache.NewNoop(), reg, &http.Client{Timeout: 5 * time.Second}, "", metrics.NoopTracker{}, AuditConfig{}, nil)
+
+	def := llmDef("passthrough", "", 0) // no canonical_model
+	setBackend(def, backend.URL)
+
+	rr := doServeJSON(h, def, chatBody)
+
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response not JSON: %v", err)
+	}
+	if got := resp["model"]; got != "Qwen/Qwen3.8-27B-FP8" {
+		t.Errorf("without canonical_model, backend model should pass through; got %v", got)
+	}
+}
+
+func TestServeStream_CanonicalModel_RevealedInChunks(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, "data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"model\":\"Qwen/Qwen3.8-27B-FP8\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"}}]}\n")
+		io.WriteString(w, "\n")
+		io.WriteString(w, "data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"model\":\"Qwen/Qwen3.8-27B-FP8\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n")
+		io.WriteString(w, "\n")
+		io.WriteString(w, "data: [DONE]\n")
+	}))
+	defer backend.Close()
+
+	reg := provider.NewRegistry()
+	h := New(cache.NewNoop(), reg, &http.Client{Timeout: 5 * time.Second}, "", metrics.NoopTracker{}, AuditConfig{}, nil)
+
+	def := llmDef("passthrough", "Qwen/Qwen3.8-27B-FP8", 0)
+	def.CanonicalModel = "code-1.0"
+	setBackend(def, backend.URL)
+
+	streamBody := `{"model":"my-alias","stream":true,"messages":[{"role":"user","content":"Hi"}]}`
+	rr := doServeJSON(h, def, streamBody)
+
+	out := rr.Body.String()
+	if strings.Contains(out, "Qwen/Qwen3.8-27B-FP8") {
+		t.Errorf("stream leaked raw backend model id:\n%s", out)
+	}
+	if !strings.Contains(out, `"model":"code-1.0"`) {
+		t.Errorf("stream chunks should carry canonical model; got:\n%s", out)
+	}
+	if !strings.Contains(out, "data: [DONE]") {
+		t.Errorf("stream should preserve [DONE]; got:\n%s", out)
+	}
+}
+
 func TestServeJSON_CacheHit_ReturnsCachedBody(t *testing.T) {
 	mc := newMemCache()
 

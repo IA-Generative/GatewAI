@@ -20,7 +20,7 @@ func feed(g *streamGuard, lines []string) {
 
 func TestStreamGuard_RedactsEmailAcrossDeltas(t *testing.T) {
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64)
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64, "")
 	feed(g, []string{
 		`data: {"choices":[{"delta":{"role":"assistant"}}]}`, ``,
 		`data: {"choices":[{"delta":{"content":"contact "}}]}`, ``,
@@ -43,7 +43,7 @@ func TestStreamGuard_RedactsEmailAcrossDeltas(t *testing.T) {
 
 func TestStreamGuard_BlocksOnViolation(t *testing.T) {
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, false, 64)
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, false, 64, "")
 	feed(g, []string{
 		`data: {"choices":[{"delta":{"content":"reach me at bob@example.com now"}}]}`, ``,
 		`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`, ``,
@@ -63,7 +63,7 @@ func TestStreamGuard_BlocksOnViolation(t *testing.T) {
 
 func TestStreamGuard_CleanContentPassesThrough(t *testing.T) {
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64)
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64, "")
 	feed(g, []string{
 		`data: {"choices":[{"delta":{"content":"the weather is nice today"}}]}`, ``,
 		`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`, ``,
@@ -84,7 +84,7 @@ func TestStreamGuard_CleanContentPassesThrough(t *testing.T) {
 func TestStreamGuard_WindowFlush(t *testing.T) {
 	// A tiny window forces a flush mid-content (no control chunk needed).
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 1) // 1 token → 4 chars
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 1, "") // 1 token → 4 chars
 	feed(g, []string{
 		`data: {"choices":[{"delta":{"content":"hello world this is long"}}]}`, ``,
 	})
@@ -141,7 +141,7 @@ func TestStreamGuard_RedactStraddlesWindowBoundary(t *testing.T) {
 	// email is fed one char at a time between two 40-char fillers, so it straddles
 	// an incremental release boundary. It must be fully redacted, never leaked.
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 8)
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 8, "")
 	parts := append([]string{strings.Repeat("a", 40) + " "}, emailByChar()...)
 	parts = append(parts, " "+strings.Repeat("b", 40))
 	feed(g, chunkLines(parts...))
@@ -159,7 +159,7 @@ func TestStreamGuard_RedactStraddlesWindowBoundary(t *testing.T) {
 
 func TestStreamGuard_BlockStraddlesWindowBoundary(t *testing.T) {
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, false, 8)
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, false, 8, "")
 	parts := append([]string{strings.Repeat("a", 40) + " "}, emailByChar()...)
 	parts = append(parts, " "+strings.Repeat("b", 40))
 	feed(g, chunkLines(parts...))
@@ -174,7 +174,7 @@ func TestStreamGuard_BlockStraddlesWindowBoundary(t *testing.T) {
 
 func TestStreamGuard_PreservesFinishReasonWithContent(t *testing.T) {
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64)
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64, "")
 	// One chunk carrying BOTH content and finish_reason.
 	feed(g, []string{
 		`data: {"id":"c1","model":"m","choices":[{"delta":{"content":"all good"},"finish_reason":"stop"}]}`, ``,
@@ -191,7 +191,7 @@ func TestStreamGuard_PreservesFinishReasonWithContent(t *testing.T) {
 
 func TestStreamGuard_DataNoSpaceStillScanned(t *testing.T) {
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64)
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64, "")
 	// "data:" with no following space must still be parsed + redacted.
 	feed(g, []string{
 		`data:{"choices":[{"delta":{"content":"mail bob@example.com"}}]}`,
@@ -209,7 +209,7 @@ func TestStreamGuard_DataNoSpaceStillScanned(t *testing.T) {
 // output must be valid UTF-8 (no U+FFFD from a rune split at the window edge).
 func TestStreamGuard_MultibyteNotSplitAcrossFlush(t *testing.T) {
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 2) // 2 tokens → 8 bytes
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 2, "") // 2 tokens → 8 bytes
 	text := "café déçu à Noël — garçon éphémère" // many 2-byte runes
 	feed(g, []string{
 		`data: {"choices":[{"delta":{"content":"` + text + `"}}]}`, ``,
@@ -230,7 +230,7 @@ func TestStreamGuard_MultibyteNotSplitAcrossFlush(t *testing.T) {
 // buffered/scanned, the tool_calls chunk is emitted with content stripped.
 func TestStreamGuard_PreservesToolCallsWithContent(t *testing.T) {
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64)
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64, "")
 	feed(g, []string{
 		`data: {"id":"c1","model":"m","choices":[{"delta":{"content":"hi","tool_calls":[{"index":0,"function":{"name":"f"}}]}}]}`, ``,
 		`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`, ``,
@@ -252,7 +252,7 @@ func TestStreamGuard_PreservesToolCallsWithContent(t *testing.T) {
 // piecemeal and never redacted. Only a real finish_reason may flush.
 func TestStreamGuard_InterleavedControlChunksDoNotDefeatWindow(t *testing.T) {
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 24)
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 24, "")
 	// Email split across content deltas, each followed by a reasoning control chunk.
 	pieces := []string{"mail ", "bob", "@", "exa", "mple", ".com", " now"}
 	var lines []string
@@ -287,7 +287,7 @@ func TestStreamGuard_InterleavedControlChunksDoNotDefeatWindow(t *testing.T) {
 // through unscanned as if it were a control chunk.
 func TestStreamGuard_ArrayContentScanned(t *testing.T) {
 	var buf bytes.Buffer
-	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64)
+	g := newStreamGuard(&buf, nil, guardrails.New(), []string{"pii"}, true, 64, "")
 	feed(g, []string{
 		`data: {"choices":[{"delta":{"content":[{"type":"text","text":"mail bob@example.com"}]}}]}`, ``,
 		`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`, ``,

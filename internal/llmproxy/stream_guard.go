@@ -50,6 +50,8 @@ type streamGuard struct {
 	redact  bool // true = buffer/redact, false = block
 	window  int  // hold size in characters
 
+	canonicalModel string // when set, every forwarded chunk's "model" reports this
+
 	pending  string
 	id       string // envelope fields carried from the backend's chunks
 	model    string
@@ -58,17 +60,18 @@ type streamGuard struct {
 	violated bool // a match was seen (for metrics)
 }
 
-func newStreamGuard(w io.Writer, flusher http.Flusher, checker *guardrails.Checker, checks []string, redact bool, windowTokens int) *streamGuard {
+func newStreamGuard(w io.Writer, flusher http.Flusher, checker *guardrails.Checker, checks []string, redact bool, windowTokens int, canonicalModel string) *streamGuard {
 	if windowTokens <= 0 {
 		windowTokens = 64
 	}
 	return &streamGuard{
-		w:       w,
-		flusher: flusher,
-		checker: checker,
-		checks:  checks,
-		redact:  redact,
-		window:  windowTokens * 4, // ~4 chars/token
+		w:              w,
+		flusher:        flusher,
+		checker:        checker,
+		checks:         checks,
+		redact:         redact,
+		window:         windowTokens * 4, // ~4 chars/token
+		canonicalModel: canonicalModel,
 	}
 }
 
@@ -111,7 +114,7 @@ func (g *streamGuard) line(raw string) bool {
 				return false
 			}
 		}
-		return g.write("data: " + data + "\n\n")
+		return g.writeData(data)
 	}
 
 	g.pending += content
@@ -121,7 +124,7 @@ func (g *streamGuard) line(raw string) bool {
 		if !g.emit(true) {
 			return false
 		}
-		return g.write("data: " + rawNoContent + "\n\n")
+		return g.writeData(rawNoContent)
 	}
 	if hasSiblings {
 		// Content chunk carrying NON-terminal siblings (tool_calls/refusal/…):
@@ -131,7 +134,7 @@ func (g *streamGuard) line(raw string) bool {
 		if !g.emit(false) {
 			return false
 		}
-		return g.write("data: " + rawNoContent + "\n\n")
+		return g.writeData(rawNoContent)
 	}
 	return g.emit(false)
 }
@@ -219,6 +222,17 @@ func (g *streamGuard) write(s string) bool {
 	return true
 }
 
+// writeData forwards a "data:" chunk payload, rewriting its "model" field to the
+// canonical pinned version when one is configured. Used for every passed-through
+// chunk (content-less, terminal, sibling-carrying); synthesized content chunks
+// carry g.model, which captureEnvelope already set to the canonical name.
+func (g *streamGuard) writeData(payload string) bool {
+	if g.canonicalModel != "" {
+		payload = rewriteStreamChunkModel(payload, g.canonicalModel)
+	}
+	return g.write("data: " + payload + "\n\n")
+}
+
 // captureEnvelope records id/model/created from a chunk so synthesized content
 // chunks carry the same identifiers (keeps strict OpenAI clients happy).
 func (g *streamGuard) captureEnvelope(data string) {
@@ -232,6 +246,9 @@ func (g *streamGuard) captureEnvelope(data string) {
 	}
 	if json.Unmarshal([]byte(data), &e) == nil {
 		g.id, g.model, g.created = e.ID, e.Model, e.Created
+		if g.canonicalModel != "" {
+			g.model = g.canonicalModel
+		}
 	}
 }
 

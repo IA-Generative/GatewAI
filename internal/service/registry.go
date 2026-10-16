@@ -77,6 +77,7 @@ type Def struct {
 	InferenceHeaders map[string]string   // headers injected on every sync-direct proxy request to the backend
 	Provider         string
 	BackendModel     string // real model name sent to backend; empty = use Model (the alias)
+	CanonicalModel   string // version-pinned name reported back in the response "model" field; empty = leave backend's value
 	FallbackModel    string // model to route to when all backends are circuit-open; empty = none
 	ResponseCacheTTL time.Duration
 	Retries          int            // additional full backend-cycle attempts on network error or 5xx (sync-direct only)
@@ -490,6 +491,7 @@ func NewRegistry(cfgs []config.ServiceConfig, opts ...RegistryOption) *Registry 
 			InferenceHeaders:     cfg.InferenceHeaders,
 			Provider:             cfg.Provider,
 			BackendModel:         cfg.BackendModel,
+			CanonicalModel:       cfg.CanonicalModel,
 			FallbackModel:        cfg.FallbackModel,
 			ResponseCacheTTL:     time.Duration(cfg.ResponseCacheTTL) * time.Second,
 			Retries:              cfg.Retries,

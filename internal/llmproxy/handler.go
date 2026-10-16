@@ -381,6 +381,17 @@ func (h *Handler) ServeJSON(w http.ResponseWriter, r *http.Request, def *service
 		return
 	}
 
+	// Reveal the canonical pinned version name to the client instead of the raw
+	// backend model id (e.g. a request to "code" or "code-next" reports back
+	// "code-1.0"). Best-effort on a 2xx JSON body; a rewrite failure leaves the
+	// body untouched. Done before output guardrails / cache-fill / write so the
+	// cached copy carries the canonical name too.
+	if def.CanonicalModel != "" && finalStatus < 300 {
+		if rewritten, rwErr := rewriteBodyModel(finalBody, def.CanonicalModel); rwErr == nil {
+			finalBody = rewritten
+		}
+	}
+
 	statusStr := strconv.Itoa(finalStatus)
 	span.SetAttributes(
 		attribute.Int("http.status_code", finalStatus),
@@ -559,6 +570,30 @@ func rewriteBodyModel(body []byte, newModel string) ([]byte, error) {
 		return nil, fmt.Errorf("rewrite model: marshal: %w", err)
 	}
 	return out, nil
+}
+
+// rewriteStreamChunkModel rewrites the "model" field of a single SSE chunk
+// payload (the JSON after "data: ") to newModel, so a streamed response reveals
+// the canonical pinned version instead of the raw backend model id. The chunk is
+// returned unchanged when it is "[DONE]", is not JSON, or has no "model" field
+// (so control frames and the terminal marker are never altered).
+func rewriteStreamChunkModel(payload, newModel string) string {
+	if payload == "" || payload == "[DONE]" {
+		return payload
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(payload), &raw); err != nil {
+		return payload
+	}
+	if _, ok := raw["model"]; !ok {
+		return payload
+	}
+	raw["model"] = newModel
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return payload
+	}
+	return string(b)
 }
 
 // isStreamingRequest reports whether the JSON body sets "stream": true.
@@ -767,7 +802,7 @@ func (h *Handler) serveStream(w http.ResponseWriter, r *http.Request, def *servi
 		if canFlush {
 			fl = flusher
 		}
-		guard := newStreamGuard(w, fl, h.guard, out.Checks, out.Streaming == "buffer", out.StreamWindowTokens)
+		guard := newStreamGuard(w, fl, h.guard, out.Checks, out.Streaming == "buffer", out.StreamWindowTokens, def.CanonicalModel)
 		for scanner.Scan() {
 			recordFirstChunk()
 			line := scanner.Text()
@@ -796,7 +831,14 @@ func (h *Handler) serveStream(w http.ResponseWriter, r *http.Request, def *servi
 		for scanner.Scan() {
 			recordFirstChunk()
 			line := scanner.Text()
-			if _, writeErr := fmt.Fprintf(w, "%s\n", line); writeErr != nil {
+			// Reveal the canonical pinned version in each streamed chunk's "model".
+			outLine := line
+			if def.CanonicalModel != "" {
+				if payload, ok := strings.CutPrefix(line, "data: "); ok {
+					outLine = "data: " + rewriteStreamChunkModel(payload, def.CanonicalModel)
+				}
+			}
+			if _, writeErr := fmt.Fprintf(w, "%s\n", outLine); writeErr != nil {
 				return // client disconnected
 			}
 			if canFlush {
