@@ -37,6 +37,7 @@ type WindowUsage struct {
 // under the owning ServiceUsage entry.
 type ModelUsage struct {
 	Model       string     `json:"model"`
+	BudgetGroup string     `json:"budget_group,omitempty"` // set when this row is a shared budget_group
 	Tokens      int64      `json:"tokens,omitempty"`
 	TokenLimit  int64      `json:"token_limit,omitempty"`
 	TokenPeriod string     `json:"token_period,omitempty"`

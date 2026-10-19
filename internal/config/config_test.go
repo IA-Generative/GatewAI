@@ -1721,3 +1721,45 @@ func TestLoad_Validate_BudgetGroup_Valid(t *testing.T) {
 		t.Errorf("valid coherent budget_group should pass, got: %v", err)
 	}
 }
+
+func TestLoad_Validate_BudgetGroup_SpansServiceTypes(t *testing.T) {
+	path := writeConfig(t, budgetGroupBase+`
+  - type: llm
+    model: code
+    provider: passthrough
+    inference_url: "http://a"
+    operations: {chat: ["/v1/chat/completions"]}
+    budget_group: g
+    token_limits: {"*": {token_rate: 1000, token_period: 1h}}
+  - type: embedding
+    model: emb
+    provider: passthrough
+    inference_url: "http://b"
+    operations: {embed: ["/v1/embeddings"]}
+    budget_group: g
+    token_limits: {"*": {token_rate: 1000, token_period: 1h}}
+`)
+	if _, err := config.Load(path); err == nil {
+		t.Error("expected error: budget_group spans service types")
+	}
+}
+
+func TestLoad_Validate_BudgetGroup_CollidesWithModelName(t *testing.T) {
+	path := writeConfig(t, budgetGroupBase+`
+  - type: llm
+    model: code
+    provider: passthrough
+    inference_url: "http://a"
+    operations: {chat: ["/v1/chat/completions"]}
+    budget_group: shared
+    token_limits: {"*": {token_rate: 1000, token_period: 1h}}
+  - type: llm
+    model: shared
+    provider: passthrough
+    inference_url: "http://b"
+    operations: {chat: ["/v1/chat/completions"]}
+`)
+	if _, err := config.Load(path); err == nil {
+		t.Error("expected error: budget_group name collides with an ungrouped model")
+	}
+}

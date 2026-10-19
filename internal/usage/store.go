@@ -296,6 +296,9 @@ func (s *redisUsageStore) getModelUsage(ctx context.Context, consumer, userType,
 		Model:  model,
 		Tokens: tokens,
 	}
+	if budgetKey != model {
+		mu.BudgetGroup = budgetKey // shared across aliases; model is the representative
+	}
 	if ttl > 0 {
 		resetAt := time.Now().Add(ttl).UTC()
 		mu.ResetAt = &resetAt

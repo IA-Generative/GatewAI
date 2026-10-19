@@ -238,6 +238,10 @@ services:
   # tokenLimits : budget tokens par user type, indépendant du rate_limits service.
   # Requires server.consumerHeader + server.userTypeHeader.
   #
+  # budgetGroup : mutualise le budget tokens entre alias partageant un backend
+  # (même budgetGroup sur "code", "code-1.0" → budget compté une seule fois par
+  # consommateur). Vide (défaut) = budget par alias, clé = nom du modèle.
+  #
   # - type: llm
   #   model: "gpt-4o"
   #   provider: passthrough
@@ -245,6 +249,7 @@ services:
   #     chat:
   #       - "/v1/chat/completions"
   #   backendPool: vllm-llama3   # see the backendPools example above — replaces the deprecated inline backends: list
+  #   budgetGroup: "gpt-4o-pool" # optional: share the token budget with other aliases on this backend
   #   tokenLimits:
   #     premium:
   #       tokenRate: 500000
