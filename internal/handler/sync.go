@@ -211,6 +211,12 @@ func (h *SyncHandler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 		return
 	}
+	// net/http never deletes the temp files multipart uploads spill to disk.
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
 
 	// model is optional when the path pattern embeds the model name
 	// (e.g. /v2/models/{model}/infer). RouteSync extracts it from the URL.

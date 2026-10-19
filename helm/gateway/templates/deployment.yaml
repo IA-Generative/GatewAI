@@ -73,6 +73,10 @@ spec:
               mountPath: /etc/ssl/s3-ca
               readOnly: true
             {{- end }}
+            {{- if .Values.tmpDir.enabled }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /health
@@ -110,6 +114,14 @@ spec:
         - name: s3-ca
           secret:
             secretName: {{ .Values.s3.existingCABundle }}
+        {{- end }}
+        {{- if .Values.tmpDir.enabled }}
+        # Bounds multipart upload spill so a leak evicts the pod, not the node.
+        - name: tmp
+          emptyDir:
+            {{- with .Values.tmpDir.sizeLimit }}
+            sizeLimit: {{ . }}
+            {{- end }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
