@@ -762,10 +762,10 @@ func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, d
 				}
 			}
 			for key, values := range resp.Header {
-				// Don't duplicate rate-limit headers the gateway already set with an
-				// OpenAI-compatible backend that emits the same names (resp.Header
-				// keys are canonicalized, so "X-Ratelimit-*").
-				if strings.HasPrefix(key, "X-Ratelimit") {
+				// Skip an upstream rate-limit header only when the gateway already set
+				// that same key, to avoid duplicate values (resp.Header keys are
+				// canonicalized, so "X-Ratelimit-*"); otherwise let it pass through.
+				if strings.HasPrefix(key, "X-Ratelimit") && w.Header().Get(key) != "" {
 					continue
 				}
 				for _, v := range values {

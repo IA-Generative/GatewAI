@@ -164,14 +164,11 @@ type Limiter struct {
 }
 
 // tokenCheckScript reads the current window token count.
-// Returns {count, TTL} — TTL is -1 when the budget is not exhausted.
+// Returns {count, TTL}; TTL is the key's real TTL (-1 no expiry, -2 absent),
+// so callers can surface the window reset even when the budget isn't exhausted.
 var tokenCheckScript = redis.NewScript(`
 local count = tonumber(redis.call('GET', KEYS[1]) or '0')
-local limit  = tonumber(ARGV[1])
-if count >= limit then
-    return {count, redis.call('TTL', KEYS[1])}
-end
-return {count, -1}
+return {count, redis.call('TTL', KEYS[1])}
 `)
 
 // tokenAddScript increments the window counter and sets TTL on the first write.
