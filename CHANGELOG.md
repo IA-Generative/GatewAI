@@ -20,7 +20,7 @@ Versioning: each component is versioned independently — see tag conventions be
 
 #### Added
 
-- **`services[].budget_group`** — mutualize the per-model token budget across aliases that share one backend. Give the same `budget_group` to e.g. `code`, `code-1.0`, `code-completion` and a consumer's token budget is counted once across all three (keyed `trl:{consumer}:model:{budget_group}:{user_type}`), so a client can't multiply its budget by spreading across aliases. Empty (default) keeps the per-alias budget keyed by the model name — **no change for existing configs**.
+- **`services[].budget_group`** — mutualize the per-model token budget across aliases that share one backend. Give the same `budget_group` to e.g. `code`, `code-1.0`, `code-completion` and a consumer's token budget is counted once across all three (keyed `trl:{consumer}:model:{budget_group}:{user_type}`), so a client can't multiply its budget by spreading across aliases. It's also reflected in `GET /-/usage` (the group reports once with the shared total) and the admin quota reset (`?model=<alias>` clears the shared counter). Config validation rejects an incoherent group (a member without `token_limits`, members with differing `token_rate`/`token_period`, or a group name colliding with an ungrouped model). Empty (default) keeps the per-alias budget keyed by the model name — **no change for existing configs**.
 
 #### Changed
 

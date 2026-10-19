@@ -147,18 +147,25 @@ func (h *Handler) checkAndWriteTokenLimit(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusTooManyRequests, "token rate limit exceeded")
 		return false
 	}
-	if model == "" {
-		return true
+	mres := res // default to the service-level budget when no model is set
+	if model != "" {
+		var merr error
+		mres, merr = h.tokenLimiter.CheckModelTokens(r.Context(), r, model, budgetKey)
+		if merr != nil {
+			slog.WarnContext(r.Context(), "model token rate limit check error", "error", merr)
+		}
+		if !mres.Allowed {
+			writeTokenLimitHeaders(w, mres)
+			writeError(w, http.StatusTooManyRequests, "token rate limit exceeded")
+			return false
+		}
 	}
-	mres, merr := h.tokenLimiter.CheckModelTokens(r.Context(), r, model, budgetKey)
-	if merr != nil {
-		slog.WarnContext(r.Context(), "model token rate limit check error", "error", merr)
+	// Surface the tighter token budget on the allowed response (OpenAI-compatible).
+	tighter := res
+	if mres.Limit > 0 && (res.Limit == 0 || mres.Remaining < res.Remaining) {
+		tighter = mres
 	}
-	if !mres.Allowed {
-		writeTokenLimitHeaders(w, mres)
-		writeError(w, http.StatusTooManyRequests, "token rate limit exceeded")
-		return false
-	}
+	ratelimit.WriteOpenAIHeaders(w, "tokens", tighter)
 	return true
 }
 

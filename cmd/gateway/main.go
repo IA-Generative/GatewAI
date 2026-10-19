@@ -234,7 +234,7 @@ func buildRouter(
 		r.Get("/-/usage/report", usageHTTPHandler.AdminUsageReport)
 	}
 	if limiter != nil {
-		r.Post("/-/quota/reset", handler.NewQuotaHandler(limiter).ResetQuota)
+		r.Post("/-/quota/reset", handler.NewQuotaHandler(limiter, reg.ModelBudgetKeys()).ResetQuota)
 	}
 
 	if reg.HasSyncServices() || reg.HasRealtimeServices() {
@@ -450,7 +450,7 @@ func main() {
 	if cfg.Server.ConsumerHeader != "" {
 		ut := usage.NewRedisUsageTracker(redisClient.Raw(), cfg.Usage.RetentionDuration())
 		usageTracker = ut
-		usageStore = usage.NewRedisUsageStore(redisClient.Raw(), cfg.Usage.Retention, cfg.RateLimits, modelLimits)
+		usageStore = usage.NewRedisUsageStore(redisClient.Raw(), cfg.Usage.Retention, cfg.RateLimits, modelLimits, initialRegistry.ModelBudgetKeys())
 		usageHTTPHandler = usage.NewUsageHandler(usageStore, initialRegistry, cfg.Server.ConsumerHeader, cfg.Server.UserTypeHeader)
 		relayCompleteHandler.WithUsageTracker(usageTracker)
 		slog.Info("usage tracking enabled", "retention", cfg.Usage.Retention)
@@ -587,7 +587,7 @@ func main() {
 			usageTracker.UpdateRetention(newCfg.Usage.RetentionDuration())
 		}
 		if usageStore != nil {
-			usageStore.UpdateRateLimits(newCfg.RateLimits, newModelLimits)
+			usageStore.UpdateRateLimits(newCfg.RateLimits, newModelLimits, newReg.ModelBudgetKeys())
 		}
 		if usageHTTPHandler != nil {
 			usageHTTPHandler.UpdateRegistry(newReg)

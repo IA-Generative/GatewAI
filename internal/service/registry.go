@@ -946,6 +946,21 @@ func (r *Registry) ModelsForType(serviceType string) []string {
 	return models
 }
 
+// ModelBudgetKeys returns a model→budget-key map for every model (across all
+// service types): BudgetGroup when set, else the model name. Used to count and
+// reset the per-model token budget under the shared key for grouped aliases.
+func (r *Registry) ModelBudgetKeys() map[string]string {
+	out := make(map[string]string)
+	for _, models := range r.byTypeModel {
+		for m, def := range models {
+			if m != "" {
+				out[m] = def.BudgetKey()
+			}
+		}
+	}
+	return out
+}
+
 // Types returns all registered service type names (unique).
 func (r *Registry) Types() []string {
 	types := make([]string, 0, len(r.byTypeModel))
