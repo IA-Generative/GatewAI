@@ -216,6 +216,13 @@ func (h *SyncHandler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 			return
 		}
+		// finishRequest's own cleanup checks the original *Request, but chi and the
+		// middleware chain hand us a WithContext copy, so we must remove the spill.
+		defer func() {
+			if r.MultipartForm != nil {
+				_ = r.MultipartForm.RemoveAll()
+			}
+		}()
 		var err error
 		def, err = h.registry.RouteSync(r.URL.Path, r.FormValue("model"))
 		if err != nil {
@@ -277,19 +284,36 @@ func (h *SyncHandler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 		defer h.semaphore.Release(def.Model, usedReserved)
 	}
 
-	src := streamOnce(r.Body, r.ContentLength)
 	contentType := r.Header.Get("Content-Type")
-	if !streamable {
-		bodyRC, ct, err := reconstructMultipart(r)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to rebuild request: "+err.Error())
+	var src bodySource
+	switch {
+	case !streamable:
+		// Multi-model: already parsed; rebuild and buffer so backend failover
+		// still works. The /tmp spill is removed by the defer above.
+		bodyRC, ct, rerr := reconstructMultipart(r)
+		if rerr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to rebuild request: "+rerr.Error())
 			return
 		}
-		// Close unblocks reconstructMultipart's writer goroutine if the proxy
-		// returns before fully reading the pipe (no backends, pool busy, …).
-		defer bodyRC.Close()
-		src = streamOnce(bodyRC, -1)
+		buf, rerr := io.ReadAll(bodyRC)
+		_ = bodyRC.Close()
+		if rerr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to read request body: "+rerr.Error())
+			return
+		}
+		src = bytesBody(buf)
 		contentType = ct
+	case r.ContentLength >= 0 && r.ContentLength <= streamThresholdBytes:
+		// Small upload: buffer in memory (never spills to disk) so failover works.
+		buf, rerr := io.ReadAll(r.Body)
+		if rerr != nil {
+			writeError(w, http.StatusBadRequest, "failed to read request body: "+rerr.Error())
+			return
+		}
+		src = bytesBody(buf)
+	default:
+		// Large or unknown-length upload: stream to the backend (single attempt).
+		src = streamOnce(r.Body, r.ContentLength)
 	}
 	h.proxyToInference(w, r, def, src, contentType)
 }
@@ -529,9 +553,12 @@ func (h *SyncHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	h.proxyToInference(w, r, def, bytesBody(raw), r.Header.Get("Content-Type"))
 }
 
-// proxyToInference forwards the request body directly to the inference backend.
-// When def.Retries > 0, the full backend cycle is repeated up to that many
-// additional times (with 500ms exponential backoff) before giving up.
+// streamThresholdBytes is the upload size above which a multipart body is
+// streamed to the backend rather than buffered. At or below it, the body is
+// held in memory so backend failover/retry still works; above it, streaming
+// keeps large uploads out of the pod's memory and ephemeral storage.
+const streamThresholdBytes = 32 << 20
+
 // bodySource yields the upstream request body for each backend attempt.
 // reusable is false for a streamed body (consumed once), so the retry loop then
 // makes a single attempt — the bytes can't be replayed.
@@ -563,6 +590,9 @@ func streamOnce(rc io.ReadCloser, length int64) bodySource {
 	}
 }
 
+// proxyToInference forwards the request body to the inference backend. A
+// replayable body (src.reusable) is retried across backends up to def.Retries
+// times; a streamed body is sent once.
 func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, def *service.Def, src bodySource, contentType string) {
 	start := time.Now()
 	defer func() {
@@ -671,6 +701,9 @@ func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, d
 				continue
 			}
 			upstreamReq.ContentLength = src.length
+			if src.reusable {
+				upstreamReq.GetBody = src.open // let the transport retry a stale keep-alive conn
+			}
 			// Propagate W3C trace context so the inference service receives traceparent.
 			otel.GetTextMapPropagator().Inject(r.Context(), propagation.HeaderCarrier(upstreamReq.Header))
 			upstreamReq.Header.Set("Content-Type", contentType)
@@ -690,6 +723,9 @@ func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, d
 					"backend_index", i, "url", backend.URL, "error", err)
 				metrics.RequestsTotal.WithLabelValues("sync-direct", def.Type, def.Model, "502").Inc()
 				lastErr = "upstream error: " + err.Error()
+				if !src.reusable {
+					break // body already streamed; can't retry another backend
+				}
 				continue
 			}
 
@@ -700,6 +736,9 @@ func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, d
 				lastErr = fmt.Sprintf("backend returned %d", resp.StatusCode)
 				_, _ = io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
+				if !src.reusable {
+					break // body already streamed; can't retry another backend
+				}
 				continue
 			}
 

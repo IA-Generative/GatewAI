@@ -2,6 +2,7 @@ package handler_test
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -15,6 +16,59 @@ import (
 	"gatewai/gateway/internal/handler"
 	"gatewai/gateway/internal/service"
 )
+
+// The multi-model path parses the upload (spilling >32 MiB to /tmp). net/http's
+// own cleanup checks the server's original *Request, but chi and middleware hand
+// the handler a WithContext copy, so the handler must remove the spill itself.
+// This runs through a real server + WithContext wrapper to prove it does.
+func TestSyncHandler_MultipartParsePath_NoTempLeak(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	reg := service.NewRegistry([]config.ServiceConfig{
+		{Type: "transcription", Model: "whisper-large-v3", Operations: map[string][]string{"transcription": {"/v1/audio/transcriptions"}}, InferenceURL: upstream.URL, AcceptedExts: []string{".wav"}, MaxFileSizeMB: 100},
+		{Type: "transcription", Model: "whisper-small", Operations: map[string][]string{"transcription": {"/v1/audio/transcriptions"}}, InferenceURL: upstream.URL, AcceptedExts: []string{".wav"}, MaxFileSizeMB: 100},
+	})
+	h := handler.NewSyncHandler(reg, "", nil, nil)
+	// Mimic chi/middleware: hand the handler a WithContext copy of the request.
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey("k"), "v")))
+	})
+	srv := httptest.NewServer(wrapped)
+	defer srv.Close()
+
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	_ = mw.WriteField("model", "whisper-large-v3")
+	fw, _ := mw.CreateFormFile("file", "audio.wav")
+	_, _ = fw.Write(make([]byte, 40<<20)) // > 32 MiB → spills to /tmp during parse
+	_ = mw.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/audio/transcriptions", body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	srv.Close() // all finishRequest calls have run
+
+	entries, _ := os.ReadDir(tmp)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "multipart-") {
+			t.Errorf("multipart temp file leaked despite RemoveAll: %s", e.Name())
+		}
+	}
+}
+
+type ctxKey string
 
 // On an unambiguous (single-model) path the sync handler must stream the upload
 // straight to the backend: the backend receives the full raw multipart body,
@@ -137,7 +191,16 @@ func TestSyncHandler_MultipartStream_SingleAttemptNoRetry(t *testing.T) {
 	}})
 	h := handler.NewSyncHandler(reg, "", nil, nil)
 
-	req := multipartRequest(t, "/v1/audio/transcriptions", "whisper-large-v3", []byte("audio"))
+	// Body must exceed the stream threshold so it streams (single-shot); a small
+	// body is buffered in memory and would be retried across attempts.
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	_ = mw.WriteField("model", "whisper-large-v3")
+	fw, _ := mw.CreateFormFile("file", "audio.wav")
+	_, _ = fw.Write(make([]byte, 40<<20))
+	_ = mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/audio/transcriptions", body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
