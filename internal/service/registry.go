@@ -768,6 +768,39 @@ func (r *Registry) RouteSync(openaiPath, model string) (*Def, error) {
 	return nil, fmt.Errorf("no sync service configured for path %q", openaiPath)
 }
 
+// ResolveSyncByPath resolves a sync path to its Def when the path alone is
+// unambiguous (one registered model, or a model in the URL). ok=false means the
+// "model" field is required to route, so the caller must use RouteSync.
+func (r *Registry) ResolveSyncByPath(openaiPath string) (*Def, bool) {
+	if models, ok := r.bySync[openaiPath]; ok {
+		if len(models) == 1 {
+			for _, d := range models {
+				return d, true
+			}
+		}
+		return nil, false
+	}
+	for _, p := range r.byPattern {
+		if extracted, ok := p.match(openaiPath); ok {
+			if d, ok := p.defsByModel[extracted]; ok {
+				return d, true
+			}
+			return nil, false
+		}
+	}
+	for _, w := range r.byWildcard {
+		if strings.HasPrefix(openaiPath, w.prefix) {
+			if len(w.byModel) == 1 {
+				for _, d := range w.byModel {
+					return d, true
+				}
+			}
+			return nil, false
+		}
+	}
+	return nil, false
+}
+
 // HasSyncServices reports whether at least one service has sync mode configured.
 func (r *Registry) HasSyncServices() bool {
 	return len(r.bySync) > 0 || len(r.byPattern) > 0 || len(r.byWildcard) > 0

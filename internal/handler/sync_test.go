@@ -292,8 +292,14 @@ func TestSyncHandler_MissingModelField_MultipleModels(t *testing.T) {
 
 // TestSyncHandler_UnknownModel verifies that an unknown model returns 400.
 func TestSyncHandler_UnknownModel(t *testing.T) {
-	reg := buildRegistry()
-	h := handler.NewSyncHandler(reg, "", nil, nil)
+	// Two models share the path, so the "model" field is required and validated —
+	// an unknown model is rejected. (Single-model paths route by path and stream,
+	// treating the model field as advisory.)
+	cfgs := []config.ServiceConfig{
+		{Type: "transcription", Model: "whisper-large-v3", Operations: map[string][]string{"transcription": {"/v1/audio/transcriptions"}}, InferenceURL: "http://inference.example.com", AcceptedExts: []string{".wav"}, MaxFileSizeMB: 100},
+		{Type: "transcription", Model: "whisper-small", Operations: map[string][]string{"transcription": {"/v1/audio/transcriptions"}}, InferenceURL: "http://inference2.example.com", AcceptedExts: []string{".wav"}, MaxFileSizeMB: 100},
+	}
+	h := handler.NewSyncHandler(service.NewRegistry(cfgs), "", nil, nil)
 
 	req := multipartRequest(t, "/v1/audio/transcriptions", "unknown-model", []byte("audio"))
 	w := httptest.NewRecorder()
@@ -301,7 +307,7 @@ func TestSyncHandler_UnknownModel(t *testing.T) {
 	h.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for unknown model, got %d", w.Code)
+		t.Errorf("expected 400 for unknown model on a multi-model path, got %d", w.Code)
 	}
 }
 
