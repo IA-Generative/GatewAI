@@ -134,7 +134,7 @@ func New(c cache.Cache, p *provider.Registry, hc *http.Client, userTypeHeader st
 // Returns true when the request is allowed to proceed. On rejection it writes
 // HTTP 429 (with X-TokenRateLimit-* headers) and returns false — callers must
 // return immediately.
-func (h *Handler) checkAndWriteTokenLimit(w http.ResponseWriter, r *http.Request, serviceType, model string) bool {
+func (h *Handler) checkAndWriteTokenLimit(w http.ResponseWriter, r *http.Request, serviceType, model, budgetKey string) bool {
 	if h.tokenLimiter == nil {
 		return true
 	}
@@ -150,7 +150,7 @@ func (h *Handler) checkAndWriteTokenLimit(w http.ResponseWriter, r *http.Request
 	if model == "" {
 		return true
 	}
-	mres, merr := h.tokenLimiter.CheckModelTokens(r.Context(), r, model)
+	mres, merr := h.tokenLimiter.CheckModelTokens(r.Context(), r, model, budgetKey)
 	if merr != nil {
 		slog.WarnContext(r.Context(), "model token rate limit check error", "error", merr)
 	}
@@ -195,7 +195,7 @@ func (h *Handler) ServeJSON(w http.ResponseWriter, r *http.Request, def *service
 		return
 	}
 
-	if !h.checkAndWriteTokenLimit(w, r, def.Type, def.Model) {
+	if !h.checkAndWriteTokenLimit(w, r, def.Type, def.Model, def.BudgetKey()) {
 		return
 	}
 
@@ -244,7 +244,7 @@ func (h *Handler) ServeJSON(w http.ResponseWriter, r *http.Request, def *service
 					tCtx := context.WithoutCancel(r.Context())
 					_ = h.tokenLimiter.AddTokens(tCtx, r, def.Type, total)
 					if def.Model != "" {
-						_ = h.tokenLimiter.AddModelTokens(tCtx, r, def.Model, total)
+						_ = h.tokenLimiter.AddModelTokens(tCtx, r, def.Model, def.BudgetKey(), total)
 					}
 				}
 			}
@@ -476,7 +476,7 @@ func (h *Handler) ServeJSON(w http.ResponseWriter, r *http.Request, def *service
 			tCtx := context.WithoutCancel(r.Context())
 			_ = h.tokenLimiter.AddTokens(tCtx, r, def.Type, total)
 			if def.Model != "" {
-				_ = h.tokenLimiter.AddModelTokens(tCtx, r, def.Model, total)
+				_ = h.tokenLimiter.AddModelTokens(tCtx, r, def.Model, def.BudgetKey(), total)
 			}
 		}
 	}
@@ -598,7 +598,7 @@ func injectStreamUsage(body []byte) []byte {
 // Backend retry is possible before w.WriteHeader; once the SSE stream starts,
 // switching backends is no longer possible.
 func (h *Handler) serveStream(w http.ResponseWriter, r *http.Request, def *service.Def, body []byte, prov provider.Provider, consumer, userType string, start time.Time) {
-	if !h.checkAndWriteTokenLimit(w, r, def.Type, def.Model) {
+	if !h.checkAndWriteTokenLimit(w, r, def.Type, def.Model, def.BudgetKey()) {
 		return
 	}
 
@@ -857,7 +857,7 @@ func (h *Handler) serveStream(w http.ResponseWriter, r *http.Request, def *servi
 				tCtx := context.WithoutCancel(r.Context())
 				_ = h.tokenLimiter.AddTokens(tCtx, r, def.Type, total)
 				if def.Model != "" {
-					_ = h.tokenLimiter.AddModelTokens(tCtx, r, def.Model, total)
+					_ = h.tokenLimiter.AddModelTokens(tCtx, r, def.Model, def.BudgetKey(), total)
 				}
 			}
 		}
@@ -902,6 +902,7 @@ func writeTokenLimitHeaders(w http.ResponseWriter, res ratelimit.CheckResult) {
 	if res.Limit > 0 {
 		w.Header().Set("X-TokenRateLimit-Limit", strconv.Itoa(res.Limit))
 		w.Header().Set("X-TokenRateLimit-Remaining", "0")
+		ratelimit.WriteOpenAIHeaders(w, "tokens", res)
 		if res.ResetAfter > 0 {
 			secs := strconv.Itoa(int(res.ResetAfter.Seconds()))
 			w.Header().Set("X-TokenRateLimit-Reset", secs)

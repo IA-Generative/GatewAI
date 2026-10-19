@@ -79,10 +79,10 @@ func (s *stubTokenLimiter) CheckTokens(_ context.Context, _ *http.Request, _ str
 func (s *stubTokenLimiter) AddTokens(_ context.Context, _ *http.Request, _ string, _ int) error {
 	return nil
 }
-func (s *stubTokenLimiter) CheckModelTokens(_ context.Context, _ *http.Request, _ string) (ratelimit.CheckResult, error) {
+func (s *stubTokenLimiter) CheckModelTokens(_ context.Context, _ *http.Request, _, _ string) (ratelimit.CheckResult, error) {
 	return s.modelResult, nil
 }
-func (s *stubTokenLimiter) AddModelTokens(_ context.Context, _ *http.Request, _ string, _ int) error {
+func (s *stubTokenLimiter) AddModelTokens(_ context.Context, _ *http.Request, _, _ string, _ int) error {
 	return nil
 }
 func (s *stubTokenLimiter) AddTokensFor(_ context.Context, _, _, _ string, _ int) error {
@@ -101,7 +101,7 @@ type trackingTokenLimiter struct {
 func (t *trackingTokenLimiter) CheckTokens(_ context.Context, _ *http.Request, _ string) (ratelimit.CheckResult, error) {
 	return ratelimit.CheckResult{Allowed: true}, nil
 }
-func (t *trackingTokenLimiter) CheckModelTokens(_ context.Context, _ *http.Request, _ string) (ratelimit.CheckResult, error) {
+func (t *trackingTokenLimiter) CheckModelTokens(_ context.Context, _ *http.Request, _, _ string) (ratelimit.CheckResult, error) {
 	return ratelimit.CheckResult{Allowed: true}, nil
 }
 func (t *trackingTokenLimiter) AddTokens(_ context.Context, _ *http.Request, serviceType string, n int) error {
@@ -111,7 +111,7 @@ func (t *trackingTokenLimiter) AddTokens(_ context.Context, _ *http.Request, ser
 	t.mu.Unlock()
 	return nil
 }
-func (t *trackingTokenLimiter) AddModelTokens(_ context.Context, _ *http.Request, model string, n int) error {
+func (t *trackingTokenLimiter) AddModelTokens(_ context.Context, _ *http.Request, model, _ string, n int) error {
 	t.mu.Lock()
 	t.addedModel += n
 	t.addedModelName = model

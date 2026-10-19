@@ -294,6 +294,9 @@ data:
         {{- if .backendModel }}
         backend_model:     {{ .backendModel | quote }}
         {{- end }}
+        {{- if .budgetGroup }}
+        budget_group:      {{ .budgetGroup | quote }}
+        {{- end }}
         {{- if .visibility }}
         visibility:
           {{- if .visibility.userTypes }}
