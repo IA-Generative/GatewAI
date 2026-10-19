@@ -274,16 +274,9 @@ func (h *SyncHandler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.semaphore != nil {
-		isPriority := h.priorityHeader != "" && r.Header.Get(h.priorityHeader) != ""
-		acquired, usedReserved := h.semaphore.TryAcquire(def.Model, isPriority)
-		if !acquired {
-			writeError(w, http.StatusServiceUnavailable, "model too busy, retry later")
-			return
-		}
-		defer h.semaphore.Release(def.Model, usedReserved)
-	}
-
+	// Build the body before acquiring the concurrency slot: buffered uploads are
+	// read here, so a slow client upload doesn't pin a model/pool slot (streamed
+	// uploads are read later, inside proxyToInference, which is inherent).
 	contentType := r.Header.Get("Content-Type")
 	var src bodySource
 	switch {
@@ -312,8 +305,18 @@ func (h *SyncHandler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 		}
 		src = bytesBody(buf)
 	default:
-		// Large or unknown-length upload: stream to the backend (single attempt).
+		// Large or unknown-length upload: streamed single-shot in proxyToInference.
 		src = streamOnce(r.Body, r.ContentLength)
+	}
+
+	if h.semaphore != nil {
+		isPriority := h.priorityHeader != "" && r.Header.Get(h.priorityHeader) != ""
+		acquired, usedReserved := h.semaphore.TryAcquire(def.Model, isPriority)
+		if !acquired {
+			writeError(w, http.StatusServiceUnavailable, "model too busy, retry later")
+			return
+		}
+		defer h.semaphore.Release(def.Model, usedReserved)
 	}
 	h.proxyToInference(w, r, def, src, contentType)
 }
@@ -701,6 +704,10 @@ func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, d
 				continue
 			}
 			upstreamReq.ContentLength = src.length
+			if src.length == 0 {
+				_ = bodyRC.Close()
+				upstreamReq.Body = http.NoBody // avoid chunked framing for an empty body
+			}
 			if src.reusable {
 				upstreamReq.GetBody = src.open // let the transport retry a stale keep-alive conn
 			}
