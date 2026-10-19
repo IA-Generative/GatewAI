@@ -512,9 +512,18 @@ resources: {}
   # limits:
   #   cpu: 500m
   #   memory: 256Mi
+  #   ephemeral-storage: 4Gi   # cap writable layer + logs; evicts the pod, not the node
   # requests:
   #   cpu: 100m
   #   memory: 128Mi
+  #   ephemeral-storage: 1Gi
+
+# /tmp as a bounded emptyDir: multipart uploads over 32 MiB spill here, so a
+# leak evicts the pod instead of filling the node's disk. sizeLimit should
+# exceed the largest expected upload (services[].max_file_size_mb).
+tmpDir:
+  enabled: true
+  sizeLimit: 4Gi
 
 nodeSelector: {}
 tolerations: []

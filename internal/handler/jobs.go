@@ -299,6 +299,12 @@ func (h *JobHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 		return
 	}
+	// net/http never deletes the temp files multipart uploads spill to disk.
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
 
 	// Resolve the specific model def now that the form is parsed.
 	def, err := h.registry.RouteAsync(serviceType, r.FormValue("model"))
