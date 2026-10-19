@@ -1049,7 +1049,54 @@ func (c *Config) validate() error {
 			}
 		}
 	}
+
+	// Budget-group coherence: models sharing a budget_group share one token
+	// counter, so every member must set token_limits (an unlimited member would
+	// be a hole), those limits must agree (a differing token_period would corrupt
+	// the shared window), and the group name must not collide with an ungrouped
+	// model's counter.
+	groups := map[string][]ServiceConfig{}
+	ungroupedModels := map[string]bool{}
+	for _, svc := range c.Services {
+		if svc.BudgetGroup != "" {
+			groups[svc.BudgetGroup] = append(groups[svc.BudgetGroup], svc)
+		} else if svc.Model != "" {
+			ungroupedModels[svc.Model] = true
+		}
+	}
+	for group, members := range groups {
+		if ungroupedModels[group] {
+			return fmt.Errorf("budget_group %q collides with an ungrouped model of the same name", group)
+		}
+		var ref map[string]RateLimitConfig
+		for _, m := range members {
+			if len(m.TokenLimits) == 0 {
+				return fmt.Errorf("model %q in budget_group %q has no token_limits (every member must set them, or the shared budget has a hole)", m.Model, group)
+			}
+			if ref == nil {
+				ref = m.TokenLimits
+			} else if !tokenLimitsEqual(ref, m.TokenLimits) {
+				return fmt.Errorf("model %q in budget_group %q has token_limits different from another member (members sharing a budget must have identical token_rate/token_period)", m.Model, group)
+			}
+		}
+	}
 	return nil
+}
+
+// tokenLimitsEqual reports whether two token_limits maps define the same budget
+// (same user types, same token_rate and token_period) — the fields that drive
+// the shared token window for a budget_group.
+func tokenLimitsEqual(a, b map[string]RateLimitConfig) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for ut, av := range a {
+		bv, ok := b[ut]
+		if !ok || av.TokenRate != bv.TokenRate || av.TokenPeriod != bv.TokenPeriod {
+			return false
+		}
+	}
+	return true
 }
 
 // validatePoolRateLimit checks a RateLimitConfig used at backend_pools scope

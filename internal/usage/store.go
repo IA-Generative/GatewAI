@@ -23,10 +23,10 @@ type UsageStore interface {
 	GetConsumerUsage(ctx context.Context, consumer, userType string, serviceTypes []string, modelsByType map[string][]string) (*ConsumerUsage, error)
 	ListConsumers(ctx context.Context, limit, offset int64) (consumers []string, total int64, err error)
 	ListConsumersByType(ctx context.Context, serviceType string, limit, offset int64) (consumers []string, total int64, err error)
-	// UpdateRateLimits swaps the rate_limits/model token_limits config consulted
-	// when resolving the configured quota surfaced alongside window usage.
-	// Called on config hot-reload.
-	UpdateRateLimits(rateLimits, modelLimits map[string]map[string]config.RateLimitConfig)
+	// UpdateRateLimits swaps the rate_limits/model token_limits config (and the
+	// model→budget-key map) consulted when resolving the configured quota surfaced
+	// alongside window usage. Called on config hot-reload.
+	UpdateRateLimits(rateLimits, modelLimits map[string]map[string]config.RateLimitConfig, budgetKeys map[string]string)
 	// GetUsageReport returns cross-consumer calendar-aligned totals for
 	// serviceType, one bucket per period (daily/weekly/monthly) covering
 	// [from, to] inclusive. Returns ErrTooManyBuckets if the range would
@@ -49,6 +49,7 @@ type redisUsageStore struct {
 	mu          sync.RWMutex
 	rateLimits  map[string]map[string]config.RateLimitConfig
 	modelLimits map[string]map[string]config.RateLimitConfig
+	budgetKeys  map[string]string // model → shared token-budget key (empty value = key by model)
 }
 
 // NewRedisUsageStore returns a UsageStore backed by Redis.
@@ -56,17 +57,18 @@ type redisUsageStore struct {
 // rateLimits and modelLimits are the configured rate_limits and per-model
 // token_limits maps, used to surface quotas alongside current usage; pass nil
 // for either when not configured.
-func NewRedisUsageStore(rdb *redis.Client, retention string, rateLimits, modelLimits map[string]map[string]config.RateLimitConfig) UsageStore {
-	return &redisUsageStore{rdb: rdb, retention: retention, rateLimits: rateLimits, modelLimits: modelLimits}
+func NewRedisUsageStore(rdb *redis.Client, retention string, rateLimits, modelLimits map[string]map[string]config.RateLimitConfig, budgetKeys map[string]string) UsageStore {
+	return &redisUsageStore{rdb: rdb, retention: retention, rateLimits: rateLimits, modelLimits: modelLimits, budgetKeys: budgetKeys}
 }
 
-// UpdateRateLimits swaps the rate_limits/modelLimits maps consulted by
+// UpdateRateLimits swaps the rate_limits/modelLimits/budgetKeys maps consulted by
 // getWindowUsage/getModelUsage.
-func (s *redisUsageStore) UpdateRateLimits(rateLimits, modelLimits map[string]map[string]config.RateLimitConfig) {
+func (s *redisUsageStore) UpdateRateLimits(rateLimits, modelLimits map[string]map[string]config.RateLimitConfig, budgetKeys map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rateLimits = rateLimits
 	s.modelLimits = modelLimits
+	s.budgetKeys = budgetKeys
 }
 
 // resolveConfig looks up the RateLimitConfig for key/userType in limitsMap,
@@ -273,7 +275,15 @@ func (s *redisUsageStore) getWindowUsage(ctx context.Context, consumer, userType
 // per-model quota (services[].token_limits). Returns nil when there's neither
 // window data nor a configured quota for this model.
 func (s *redisUsageStore) getModelUsage(ctx context.Context, consumer, userType, model string) *ModelUsage {
-	key := fmt.Sprintf("trl:%s:model:%s:%s", consumer, model, userType)
+	// The counter is keyed by the budget key (the shared group when configured,
+	// else the model name) so grouped aliases report the shared total, not 0.
+	s.mu.RLock()
+	budgetKey := s.budgetKeys[model]
+	s.mu.RUnlock()
+	if budgetKey == "" {
+		budgetKey = model
+	}
+	key := fmt.Sprintf("trl:%s:model:%s:%s", consumer, budgetKey, userType)
 	tokens, ttl := s.getIntWithTTL(ctx, key)
 
 	cfg, hasQuota := s.resolveModelLimitConfig(model, userType)

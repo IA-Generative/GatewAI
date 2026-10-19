@@ -1646,3 +1646,78 @@ services:
 		t.Errorf("valid realtime config rejected: %v", err)
 	}
 }
+
+const budgetGroupBase = `
+s3:
+  endpoint: https://s3.example.com
+  region: us-east-1
+  bucket: my-bucket
+redis:
+  addr: "localhost:6379"
+services:
+`
+
+func TestLoad_Validate_BudgetGroup_MemberMissingTokenLimits(t *testing.T) {
+	path := writeConfig(t, budgetGroupBase+`
+  - type: llm
+    model: code
+    provider: passthrough
+    inference_url: "http://a"
+    operations: {chat: ["/v1/chat/completions"]}
+    budget_group: g
+    token_limits: {"*": {token_rate: 1000, token_period: 1h}}
+  - type: llm
+    model: code-completion
+    provider: passthrough
+    inference_url: "http://b"
+    operations: {chat: ["/v1/chat/completions"]}
+    budget_group: g
+`)
+	if _, err := config.Load(path); err == nil {
+		t.Error("expected error: a budget_group member has no token_limits")
+	}
+}
+
+func TestLoad_Validate_BudgetGroup_MismatchedLimits(t *testing.T) {
+	path := writeConfig(t, budgetGroupBase+`
+  - type: llm
+    model: code
+    provider: passthrough
+    inference_url: "http://a"
+    operations: {chat: ["/v1/chat/completions"]}
+    budget_group: g
+    token_limits: {"*": {token_rate: 1000, token_period: 1h}}
+  - type: llm
+    model: code-completion
+    provider: passthrough
+    inference_url: "http://b"
+    operations: {chat: ["/v1/chat/completions"]}
+    budget_group: g
+    token_limits: {"*": {token_rate: 1000, token_period: 24h}}
+`)
+	if _, err := config.Load(path); err == nil {
+		t.Error("expected error: budget_group members have different token_period")
+	}
+}
+
+func TestLoad_Validate_BudgetGroup_Valid(t *testing.T) {
+	path := writeConfig(t, budgetGroupBase+`
+  - type: llm
+    model: code
+    provider: passthrough
+    inference_url: "http://a"
+    operations: {chat: ["/v1/chat/completions"]}
+    budget_group: g
+    token_limits: {"*": {token_rate: 1000, token_period: 1h}}
+  - type: llm
+    model: code-completion
+    provider: passthrough
+    inference_url: "http://b"
+    operations: {chat: ["/v1/chat/completions"]}
+    budget_group: g
+    token_limits: {"*": {token_rate: 1000, token_period: 1h}}
+`)
+	if _, err := config.Load(path); err != nil {
+		t.Errorf("valid coherent budget_group should pass, got: %v", err)
+	}
+}

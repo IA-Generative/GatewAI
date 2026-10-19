@@ -17,11 +17,15 @@ type QuotaResetter interface {
 // QuotaHandler serves POST /-/quota/reset.
 type QuotaHandler struct {
 	resetter QuotaResetter
+	// budgetKeys maps a model to its shared token-budget key, so resetting by a
+	// grouped alias clears the shared counter. nil/empty = reset by model name.
+	budgetKeys map[string]string
 }
 
-// NewQuotaHandler returns a configured QuotaHandler.
-func NewQuotaHandler(resetter QuotaResetter) *QuotaHandler {
-	return &QuotaHandler{resetter: resetter}
+// NewQuotaHandler returns a configured QuotaHandler. budgetKeys (model → budget
+// key) lets a reset by a grouped model name clear the shared counter.
+func NewQuotaHandler(resetter QuotaResetter, budgetKeys map[string]string) *QuotaHandler {
+	return &QuotaHandler{resetter: resetter, budgetKeys: budgetKeys}
 }
 
 // ResetQuota handles POST /-/quota/reset.
@@ -48,6 +52,10 @@ func (h *QuotaHandler) ResetQuota(w http.ResponseWriter, r *http.Request) {
 	if serviceType == "" {
 		writeError(w, http.StatusBadRequest, "query param 'type' is required")
 		return
+	}
+	// Resolve a grouped alias to its shared budget key so the right counter is cleared.
+	if bk := h.budgetKeys[model]; bk != "" {
+		model = bk
 	}
 
 	deleted, err := h.resetter.ResetQuota(r.Context(), consumer, serviceType, model)
