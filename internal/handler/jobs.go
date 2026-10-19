@@ -299,6 +299,14 @@ func (h *JobHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 		return
 	}
+	// The server's own cleanup (finishRequest) checks the original *Request, but
+	// chi/middleware hand us a WithContext copy, so the spill file is never
+	// removed unless we do it here.
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
 
 	// Resolve the specific model def now that the form is parsed.
 	def, err := h.registry.RouteAsync(serviceType, r.FormValue("model"))
