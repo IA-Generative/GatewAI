@@ -613,6 +613,7 @@ func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, d
 			if tr.Limit > 0 {
 				w.Header().Set("X-TokenRateLimit-Limit", strconv.Itoa(tr.Limit))
 				w.Header().Set("X-TokenRateLimit-Remaining", strconv.Itoa(tr.Remaining))
+				ratelimit.WriteOpenAIHeaders(w, "tokens", tr)
 			}
 			if !tr.Allowed {
 				w.Header().Set("Retry-After", strconv.Itoa(int(tr.ResetAfter.Seconds())))

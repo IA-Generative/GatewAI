@@ -557,6 +557,11 @@ type ServiceConfig struct {
 	// A 500ms exponential backoff is applied between each cycle.
 	Retries    int              `yaml:"retries"`
 	Guardrails GuardrailsConfig `yaml:"guardrails"`
+	// BudgetGroup optionally shares this model's per-model token budget with other
+	// models carrying the same value, keyed per consumer. Use it to mutualize the
+	// budget of aliases that hit one backend (e.g. "code", "code-1.0" on one pool).
+	// Empty = the budget is keyed by the model name (per-alias, the default).
+	BudgetGroup string `yaml:"budget_group"`
 	// TokenLimits defines per-user-type token budgets for this model's LLM requests.
 	// Maps user type → RateLimitConfig (only token_rate and token_period are used).
 	// "*" acts as fallback when the user_type_header is absent or unmatched.

@@ -18,6 +18,14 @@ Versioning: each component is versioned independently — see tag conventions be
 
 ### [Unreleased]
 
+#### Added
+
+- **`services[].budget_group`** — mutualize the per-model token budget across aliases that share one backend. Give the same `budget_group` to e.g. `code`, `code-1.0`, `code-completion` and a consumer's token budget is counted once across all three (keyed `trl:{consumer}:model:{budget_group}:{user_type}`), so a client can't multiply its budget by spreading across aliases. Empty (default) keeps the per-alias budget keyed by the model name — **no change for existing configs**.
+
+#### Changed
+
+- **OpenAI-compatible rate-limit response headers.** Alongside the existing `X-RateLimit-*` / `X-TokenRateLimit-*` (kept for now), the gateway also emits the standard `x-ratelimit-{limit,remaining,reset}-requests` and `x-ratelimit-{limit,remaining,reset}-tokens` headers (reset as a duration, e.g. `6m0s`), so OpenAI SDK clients read request/token budget directly.
+
 ### [v0.24.0] — 2026-10-19
 
 #### Added

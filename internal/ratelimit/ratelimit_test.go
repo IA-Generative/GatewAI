@@ -403,7 +403,7 @@ func TestCheckModelTokens_NoConfig_Allowed(t *testing.T) {
 	l, _ := newLimiterWithModelLimits(t, nil, nil, "", "X-User-Type")
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
 
-	res, err := l.CheckModelTokens(context.Background(), r, "gpt-4o")
+	res, err := l.CheckModelTokens(context.Background(), r, "gpt-4o", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,11 +420,11 @@ func TestAddModelTokens_ThenCheckModelTokens_BudgetEnforced(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
 	r.Header.Set("X-Consumer", "user1")
 
-	if err := l.AddModelTokens(context.Background(), r, "gpt-4o", 900); err != nil {
+	if err := l.AddModelTokens(context.Background(), r, "gpt-4o", "", 900); err != nil {
 		t.Fatal(err)
 	}
 
-	res, err := l.CheckModelTokens(context.Background(), r, "gpt-4o")
+	res, err := l.CheckModelTokens(context.Background(), r, "gpt-4o", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,11 +438,11 @@ func TestAddModelTokens_ThenCheckModelTokens_BudgetEnforced(t *testing.T) {
 		t.Fatalf("expected Remaining=100, got %d", res.Remaining)
 	}
 
-	if err := l.AddModelTokens(context.Background(), r, "gpt-4o", 200); err != nil {
+	if err := l.AddModelTokens(context.Background(), r, "gpt-4o", "", 200); err != nil {
 		t.Fatal(err)
 	}
 
-	res, err = l.CheckModelTokens(context.Background(), r, "gpt-4o")
+	res, err = l.CheckModelTokens(context.Background(), r, "gpt-4o", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +481,7 @@ func TestCheckModelTokens_CounterIsolatedFromServiceCounter(t *testing.T) {
 	}
 
 	// Model counter must be independent.
-	modRes, err := l.CheckModelTokens(context.Background(), r, "gpt-4o")
+	modRes, err := l.CheckModelTokens(context.Background(), r, "gpt-4o", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +497,7 @@ func TestAddModelTokens_SetsWindowTTL(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
 	r.Header.Set("X-Consumer", "user1")
 
-	if err := l.AddModelTokens(context.Background(), r, "gpt-4o", 100); err != nil {
+	if err := l.AddModelTokens(context.Background(), r, "gpt-4o", "", 100); err != nil {
 		t.Fatal(err)
 	}
 
@@ -867,7 +867,7 @@ func TestResetQuota_WithModel_DeletesPerModelTokenBudget(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/", nil)
 	req.Header.Set("X-Consumer", "acme")
-	if err := l.AddModelTokens(ctx, req, "whisper-large-v3", 100); err != nil {
+	if err := l.AddModelTokens(ctx, req, "whisper-large-v3", "", 100); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1049,5 +1049,74 @@ func TestCheckBackendPool_RedisError_FailsOpen(t *testing.T) {
 	}
 	if !res.Allowed {
 		t.Fatal("expected fail-open to allow the request when Redis is unreachable")
+	}
+}
+
+// Two models sharing a budget_group draw from one per-consumer counter.
+func TestModelTokens_BudgetGroup_SharesCounter(t *testing.T) {
+	const limit = 1000
+	l, _ := newLimiterWithModelLimits(t, nil, map[string]map[string]config.RateLimitConfig{
+		"code":            {"*": {TokenRate: limit, TokenPeriod: "1h"}},
+		"code-completion": {"*": {TokenRate: limit, TokenPeriod: "1h"}},
+	}, "X-Consumer", "X-User-Type")
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+	r.Header.Set("X-Consumer", "user1")
+
+	if err := l.AddModelTokens(context.Background(), r, "code", "qwen", 900); err != nil {
+		t.Fatal(err)
+	}
+	// A different alias, same budget_group → sees the 900 already spent.
+	res, err := l.CheckModelTokens(context.Background(), r, "code-completion", "qwen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Remaining != 100 {
+		t.Errorf("shared budget: remaining = %d, want 100", res.Remaining)
+	}
+}
+
+// With budget_group unset the counter is per-alias and keyed by the model name —
+// the pre-existing behaviour, unchanged.
+func TestModelTokens_NoBudgetGroup_IsolatedPerModel(t *testing.T) {
+	const limit = 1000
+	l, _ := newLimiterWithModelLimits(t, nil, map[string]map[string]config.RateLimitConfig{
+		"code":            {"*": {TokenRate: limit, TokenPeriod: "1h"}},
+		"code-completion": {"*": {TokenRate: limit, TokenPeriod: "1h"}},
+	}, "X-Consumer", "X-User-Type")
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+	r.Header.Set("X-Consumer", "user1")
+
+	if err := l.AddModelTokens(context.Background(), r, "code", "", 900); err != nil {
+		t.Fatal(err)
+	}
+	// Same alias sees the spend.
+	res, _ := l.CheckModelTokens(context.Background(), r, "code", "")
+	if res.Remaining != 100 {
+		t.Errorf("code remaining = %d, want 100", res.Remaining)
+	}
+	// A different alias is unaffected (separate counter).
+	res, _ = l.CheckModelTokens(context.Background(), r, "code-completion", "")
+	if res.Remaining != 1000 {
+		t.Errorf("code-completion remaining = %d, want 1000 (isolated)", res.Remaining)
+	}
+}
+
+func TestWriteOpenAIHeaders(t *testing.T) {
+	w := httptest.NewRecorder()
+	ratelimit.WriteOpenAIHeaders(w, "tokens", ratelimit.CheckResult{Limit: 1000, Remaining: 250, ResetAfter: 90 * time.Second})
+	if got := w.Header().Get("x-ratelimit-limit-tokens"); got != "1000" {
+		t.Errorf("limit-tokens = %q, want 1000", got)
+	}
+	if got := w.Header().Get("x-ratelimit-remaining-tokens"); got != "250" {
+		t.Errorf("remaining-tokens = %q, want 250", got)
+	}
+	if got := w.Header().Get("x-ratelimit-reset-tokens"); got != "1m30s" {
+		t.Errorf("reset-tokens = %q, want 1m30s", got)
+	}
+	// Unlimited → no headers.
+	w2 := httptest.NewRecorder()
+	ratelimit.WriteOpenAIHeaders(w2, "requests", ratelimit.CheckResult{Limit: 0})
+	if got := w2.Header().Get("x-ratelimit-limit-requests"); got != "" {
+		t.Errorf("expected no header when limit=0, got %q", got)
 	}
 }

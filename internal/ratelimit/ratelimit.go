@@ -75,6 +75,21 @@ type CheckResult struct {
 	ResetAfter time.Duration // time until the window resets; 0 when unlimited
 }
 
+// WriteOpenAIHeaders sets OpenAI-compatible rate-limit headers for the given unit
+// ("requests" or "tokens"): x-ratelimit-limit-<unit>, -remaining-<unit>, and
+// -reset-<unit> (a duration like "6m0s"). No-op when the limit is 0 (unlimited).
+func WriteOpenAIHeaders(w http.ResponseWriter, unit string, res CheckResult) {
+	if res.Limit == 0 {
+		return
+	}
+	h := w.Header()
+	h.Set("x-ratelimit-limit-"+unit, fmt.Sprintf("%d", res.Limit))
+	h.Set("x-ratelimit-remaining-"+unit, fmt.Sprintf("%d", res.Remaining))
+	if res.ResetAfter > 0 {
+		h.Set("x-ratelimit-reset-"+unit, res.ResetAfter.String())
+	}
+}
+
 // Checker is the interface implemented by Limiter.
 // Handlers depend on this interface so they can be tested without Redis.
 type Checker interface {
@@ -122,10 +137,12 @@ type TokenChecker interface {
 	CheckTokens(ctx context.Context, r *http.Request, serviceType string) (CheckResult, error)
 	// AddTokens records total tokens consumed into the current window counter.
 	AddTokens(ctx context.Context, r *http.Request, serviceType string, total int) error
-	// CheckModelTokens returns whether the caller still has token budget for the given model.
-	CheckModelTokens(ctx context.Context, r *http.Request, model string) (CheckResult, error)
-	// AddModelTokens records total tokens consumed for the given model into the window counter.
-	AddModelTokens(ctx context.Context, r *http.Request, model string, total int) error
+	// CheckModelTokens returns whether the caller still has token budget for the given
+	// model; budgetKey is the counter key (empty = model name).
+	CheckModelTokens(ctx context.Context, r *http.Request, model, budgetKey string) (CheckResult, error)
+	// AddModelTokens records tokens consumed for the given model into the window counter
+	// under budgetKey (empty = model name).
+	AddModelTokens(ctx context.Context, r *http.Request, model, budgetKey string, total int) error
 	// AddTokensFor records total tokens consumed for a known consumer/userType,
 	// bypassing the *http.Request-based resolution AddTokens uses. Used by the
 	// async job completion path where no request is available.
@@ -569,10 +586,13 @@ func (l *Limiter) CheckTokens(ctx context.Context, r *http.Request, serviceType 
 // CheckModelTokens returns whether the caller still has token budget for the
 // given model in the current window. No-op (allowed) when no model limits are
 // configured. Fail-open on Redis errors.
-func (l *Limiter) CheckModelTokens(ctx context.Context, r *http.Request, model string) (CheckResult, error) {
+func (l *Limiter) CheckModelTokens(ctx context.Context, r *http.Request, model, budgetKey string) (CheckResult, error) {
 	consumer, userType, cfg := l.resolveFromMap(r, model, l.modelLimits)
 	if cfg.TokenRate == 0 {
 		return CheckResult{Allowed: true}, nil
+	}
+	if budgetKey == "" {
+		budgetKey = model
 	}
 
 	period, err := time.ParseDuration(cfg.TokenPeriod)
@@ -581,7 +601,10 @@ func (l *Limiter) CheckModelTokens(ctx context.Context, r *http.Request, model s
 		return CheckResult{Allowed: true}, fmt.Errorf("parse token_period %q: %w", cfg.TokenPeriod, err)
 	}
 
-	key := fmt.Sprintf("trl:%s:model:%s:%s", consumer, model, userType)
+	// Counter is keyed by budgetKey (model name by default; a shared group when
+	// set) so mutualized aliases share one budget; the limit and metrics stay
+	// per-model.
+	key := fmt.Sprintf("trl:%s:model:%s:%s", consumer, budgetKey, userType)
 
 	raw, err := tokenCheckScript.Run(ctx, l.rdb, []string{key}, cfg.TokenRate).Slice()
 	if err != nil {
@@ -669,7 +692,7 @@ func (l *Limiter) AddTokens(ctx context.Context, r *http.Request, serviceType st
 // AddModelTokens records total tokens consumed for the given model into the
 // current window counter. No-op when no model limits are configured or total
 // is 0. Fail-open on Redis errors.
-func (l *Limiter) AddModelTokens(ctx context.Context, r *http.Request, model string, total int) error {
+func (l *Limiter) AddModelTokens(ctx context.Context, r *http.Request, model, budgetKey string, total int) error {
 	if total == 0 {
 		return nil
 	}
@@ -677,13 +700,16 @@ func (l *Limiter) AddModelTokens(ctx context.Context, r *http.Request, model str
 	if cfg.TokenRate == 0 {
 		return nil
 	}
+	if budgetKey == "" {
+		budgetKey = model
+	}
 
 	period, err := time.ParseDuration(cfg.TokenPeriod)
 	if err != nil {
 		return fmt.Errorf("parse token_period %q: %w", cfg.TokenPeriod, err)
 	}
 
-	key := fmt.Sprintf("trl:%s:model:%s:%s", consumer, model, userType)
+	key := fmt.Sprintf("trl:%s:model:%s:%s", consumer, budgetKey, userType)
 
 	if err := tokenAddScript.Run(ctx, l.rdb, []string{key},
 		int(period.Seconds()),

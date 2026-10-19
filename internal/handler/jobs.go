@@ -400,6 +400,7 @@ func (h *JobHandler) Submit(w http.ResponseWriter, r *http.Request) {
 			if tr.Limit > 0 {
 				w.Header().Set("X-TokenRateLimit-Limit", strconv.Itoa(tr.Limit))
 				w.Header().Set("X-TokenRateLimit-Remaining", strconv.Itoa(tr.Remaining))
+				ratelimit.WriteOpenAIHeaders(w, "tokens", tr)
 			}
 			if !tr.Allowed {
 				w.Header().Set("Retry-After", strconv.Itoa(int(tr.ResetAfter.Seconds())))
@@ -976,4 +977,5 @@ func setRateLimitHeaders(w http.ResponseWriter, r ratelimit.CheckResult) {
 	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(r.Limit))
 	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(r.Remaining))
 	w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(r.ResetAfter).Unix(), 10))
+	ratelimit.WriteOpenAIHeaders(w, "requests", r) // OpenAI-compatible aliases
 }
