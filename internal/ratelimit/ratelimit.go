@@ -517,13 +517,13 @@ func (l *Limiter) CheckTokens(ctx context.Context, r *http.Request, serviceType 
 			}
 			metrics.TokenRatelimitCheckedTotal.WithLabelValues(serviceType, userType, result).Inc()
 
+			// Expose the window reset whenever one exists (even when allowed) so
+			// x-ratelimit-reset-tokens is present on successful responses too.
 			var resetAfter time.Duration
-			if !allowed {
-				if ttl > 0 {
-					resetAfter = time.Duration(ttl) * time.Second
-				} else {
-					resetAfter = period
-				}
+			if ttl > 0 {
+				resetAfter = time.Duration(ttl) * time.Second
+			} else if !allowed {
+				resetAfter = period
 			}
 
 			svcResult = CheckResult{
@@ -627,13 +627,12 @@ func (l *Limiter) CheckModelTokens(ctx context.Context, r *http.Request, model, 
 	}
 	metrics.TokenRatelimitCheckedTotal.WithLabelValues("model:"+model, userType, result).Inc()
 
+	// Expose the window reset whenever one exists (even when allowed).
 	var resetAfter time.Duration
-	if !allowed {
-		if ttl > 0 {
-			resetAfter = time.Duration(ttl) * time.Second
-		} else {
-			resetAfter = period
-		}
+	if ttl > 0 {
+		resetAfter = time.Duration(ttl) * time.Second
+	} else if !allowed {
+		resetAfter = period
 	}
 
 	return CheckResult{

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -232,8 +233,10 @@ func (h *UsageHandler) modelsByType() map[string][]string {
 	budgetKeys := h.reg.ModelBudgetKeys()
 	out := make(map[string][]string)
 	for _, t := range h.reg.Types() {
+		models := h.reg.ModelsForType(t)
+		sort.Strings(models) // deterministic representative when a group collapses
 		seen := make(map[string]bool) // one row per budget key — grouped aliases collapse
-		for _, m := range h.reg.ModelsForType(t) {
+		for _, m := range models {
 			key := budgetKeys[m]
 			if key == "" {
 				key = m

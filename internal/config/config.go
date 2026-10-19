@@ -1069,7 +1069,11 @@ func (c *Config) validate() error {
 			return fmt.Errorf("budget_group %q collides with an ungrouped model of the same name", group)
 		}
 		var ref map[string]RateLimitConfig
+		firstType := members[0].Type
 		for _, m := range members {
+			if m.Type != firstType {
+				return fmt.Errorf("budget_group %q spans service types %q and %q; a group must be one service type", group, firstType, m.Type)
+			}
 			if len(m.TokenLimits) == 0 {
 				return fmt.Errorf("model %q in budget_group %q has no token_limits (every member must set them, or the shared budget has a hole)", m.Model, group)
 			}
@@ -1079,6 +1083,23 @@ func (c *Config) validate() error {
 				return fmt.Errorf("model %q in budget_group %q has token_limits different from another member (members sharing a budget must have identical token_rate/token_period)", m.Model, group)
 			}
 		}
+	}
+	// A model name must resolve to one budget key across all services, or the
+	// usage/reset admin surfaces (which key by model name) would read/clear the
+	// wrong counter for it.
+	modelKey := map[string]string{}
+	for _, svc := range c.Services {
+		if svc.Model == "" {
+			continue
+		}
+		key := svc.Model
+		if svc.BudgetGroup != "" {
+			key = svc.BudgetGroup
+		}
+		if prev, ok := modelKey[svc.Model]; ok && prev != key {
+			return fmt.Errorf("model %q resolves to two budget keys (%q and %q); a model name must map to a single budget_group", svc.Model, prev, key)
+		}
+		modelKey[svc.Model] = key
 	}
 	return nil
 }
