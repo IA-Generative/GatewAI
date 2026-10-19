@@ -207,25 +207,21 @@ func (h *SyncHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SyncHandler) handleMultipart(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
-		return
-	}
-	// net/http never deletes the temp files multipart uploads spill to disk.
-	defer func() {
-		if r.MultipartForm != nil {
-			_ = r.MultipartForm.RemoveAll()
+	// An unambiguous path routes without reading the body, so the upload streams
+	// straight to the backend. Only multi-model paths need the "model" field and
+	// are parsed.
+	def, streamable := h.registry.ResolveSyncByPath(r.URL.Path)
+	if !streamable {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
+			return
 		}
-	}()
-
-	// model is optional when the path pattern embeds the model name
-	// (e.g. /v2/models/{model}/infer). RouteSync extracts it from the URL.
-	modelName := r.FormValue("model")
-
-	def, err := h.registry.RouteSync(r.URL.Path, modelName)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		var err error
+		def, err = h.registry.RouteSync(r.URL.Path, r.FormValue("model"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	if !checkModelVisible(w, r, def, h.userTypeHeader) {
@@ -281,18 +277,21 @@ func (h *SyncHandler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 		defer h.semaphore.Release(def.Model, usedReserved)
 	}
 
-	bodyRC, contentType, err := reconstructMultipart(r)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to rebuild request: "+err.Error())
-		return
+	src := streamOnce(r.Body, r.ContentLength)
+	contentType := r.Header.Get("Content-Type")
+	if !streamable {
+		bodyRC, ct, err := reconstructMultipart(r)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to rebuild request: "+err.Error())
+			return
+		}
+		// Close unblocks reconstructMultipart's writer goroutine if the proxy
+		// returns before fully reading the pipe (no backends, pool busy, …).
+		defer bodyRC.Close()
+		src = streamOnce(bodyRC, -1)
+		contentType = ct
 	}
-	defer bodyRC.Close()
-	bodyBytes, err := io.ReadAll(bodyRC)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to read request body: "+err.Error())
-		return
-	}
-	h.proxyToInference(w, r, def, bodyBytes, contentType)
+	h.proxyToInference(w, r, def, src, contentType)
 }
 
 func (h *SyncHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
@@ -527,13 +526,44 @@ func (h *SyncHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.proxyToInference(w, r, def, raw, r.Header.Get("Content-Type"))
+	h.proxyToInference(w, r, def, bytesBody(raw), r.Header.Get("Content-Type"))
 }
 
 // proxyToInference forwards the request body directly to the inference backend.
 // When def.Retries > 0, the full backend cycle is repeated up to that many
 // additional times (with 500ms exponential backoff) before giving up.
-func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, def *service.Def, body []byte, contentType string) {
+// bodySource yields the upstream request body for each backend attempt.
+// reusable is false for a streamed body (consumed once), so the retry loop then
+// makes a single attempt — the bytes can't be replayed.
+type bodySource struct {
+	open     func() (io.ReadCloser, error)
+	length   int64 // Content-Length; -1 = unknown (chunked)
+	reusable bool
+}
+
+func bytesBody(b []byte) bodySource {
+	return bodySource{
+		open:     func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(b)), nil },
+		length:   int64(len(b)),
+		reusable: true,
+	}
+}
+
+func streamOnce(rc io.ReadCloser, length int64) bodySource {
+	used := false
+	return bodySource{
+		open: func() (io.ReadCloser, error) {
+			if used {
+				return nil, errors.New("streamed request body cannot be replayed")
+			}
+			used = true
+			return rc, nil
+		},
+		length: length,
+	}
+}
+
+func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, def *service.Def, src bodySource, contentType string) {
 	start := time.Now()
 	defer func() {
 		metrics.ObserveWithExemplar(r.Context(), metrics.RequestDuration.WithLabelValues("sync-direct", def.Type, def.Model), time.Since(start).Seconds())
@@ -584,6 +614,9 @@ func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, d
 
 	auth := r.Header.Get("Authorization")
 	maxAttempts := 1 + def.Retries
+	if !src.reusable {
+		maxAttempts = 1 // a streamed body can't be replayed across attempts
+	}
 	backoff := h.retryBackoff
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
@@ -626,11 +659,18 @@ func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, d
 			target.Path = r.URL.Path
 			target.RawQuery = r.URL.RawQuery
 
-			upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target.String(), bytes.NewReader(body))
+			bodyRC, err := src.open()
 			if err != nil {
+				lastErr = err.Error() // streamed body already consumed; stop trying
+				break
+			}
+			upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target.String(), bodyRC)
+			if err != nil {
+				_ = bodyRC.Close()
 				lastErr = "failed to build upstream request: " + err.Error()
 				continue
 			}
+			upstreamReq.ContentLength = src.length
 			// Propagate W3C trace context so the inference service receives traceparent.
 			otel.GetTextMapPropagator().Inject(r.Context(), propagation.HeaderCarrier(upstreamReq.Header))
 			upstreamReq.Header.Set("Content-Type", contentType)
