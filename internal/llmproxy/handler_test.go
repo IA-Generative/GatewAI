@@ -96,6 +96,7 @@ type trackingTokenLimiter struct {
 	addedModel       int
 	addedServiceType string
 	addedModelName   string
+	addedBudgetKey   string
 }
 
 func (t *trackingTokenLimiter) CheckTokens(_ context.Context, _ *http.Request, _ string) (ratelimit.CheckResult, error) {
@@ -111,10 +112,11 @@ func (t *trackingTokenLimiter) AddTokens(_ context.Context, _ *http.Request, ser
 	t.mu.Unlock()
 	return nil
 }
-func (t *trackingTokenLimiter) AddModelTokens(_ context.Context, _ *http.Request, model, _ string, n int) error {
+func (t *trackingTokenLimiter) AddModelTokens(_ context.Context, _ *http.Request, model, budgetKey string, n int) error {
 	t.mu.Lock()
 	t.addedModel += n
 	t.addedModelName = model
+	t.addedBudgetKey = budgetKey
 	t.mu.Unlock()
 	return nil
 }
@@ -1551,5 +1553,32 @@ func TestServeStream_PoolRateLimit_SkipsMemberThenSucceedsOnNext(t *testing.T) {
 	rr := doServeJSON(h, def, streamBody)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("got %d, want 200 (should succeed via member B)", rr.Code)
+	}
+}
+
+// The handler must count model tokens under def.BudgetKey() (the shared group),
+// not the raw model name — the link that makes a budget_group actually mutualize.
+func TestServeJSON_ModelTokens_CountedUnderBudgetKey(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, fakeResponse) // carries usage.{prompt,completion}_tokens
+	}))
+	defer backend.Close()
+
+	tracker := &trackingTokenLimiter{}
+	h := New(cache.NewNoop(), provider.NewRegistry(), &http.Client{Timeout: 5 * time.Second}, "", metrics.NoopTracker{}, AuditConfig{}, tracker)
+
+	def := llmDef("passthrough", "", 0)
+	def.BudgetGroup = "coder"
+	setBackend(def, backend.URL)
+
+	doServeJSON(h, def, chatBody)
+
+	if tracker.addedBudgetKey != "coder" {
+		t.Errorf("AddModelTokens budgetKey = %q, want \"coder\" (def.BudgetKey())", tracker.addedBudgetKey)
+	}
+	if tracker.addedModelName != def.Model {
+		t.Errorf("AddModelTokens model = %q, want %q", tracker.addedModelName, def.Model)
 	}
 }

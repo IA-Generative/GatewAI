@@ -1120,3 +1120,27 @@ func TestWriteOpenAIHeaders(t *testing.T) {
 		t.Errorf("expected no header when limit=0, got %q", got)
 	}
 }
+
+// An allowed token check still surfaces the window reset (ResetAfter > 0) so
+// x-ratelimit-reset-tokens appears on 2xx, not only on 429.
+func TestCheckModelTokens_Allowed_ExposesReset(t *testing.T) {
+	l, _ := newLimiterWithModelLimits(t, nil, map[string]map[string]config.RateLimitConfig{
+		"gpt-4o": {"*": {TokenRate: 1000, TokenPeriod: "1h"}},
+	}, "X-Consumer", "X-User-Type")
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+	r.Header.Set("X-Consumer", "user1")
+
+	if err := l.AddModelTokens(context.Background(), r, "gpt-4o", "", 100); err != nil {
+		t.Fatal(err)
+	}
+	res, err := l.CheckModelTokens(context.Background(), r, "gpt-4o", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Allowed {
+		t.Fatal("expected allowed (100 < 1000)")
+	}
+	if res.ResetAfter <= 0 {
+		t.Errorf("expected ResetAfter > 0 on an allowed check with an active window, got %v", res.ResetAfter)
+	}
+}
