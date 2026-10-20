@@ -77,6 +77,7 @@ type Def struct {
 	InferenceHeaders map[string]string   // headers injected on every sync-direct proxy request to the backend
 	Provider         string
 	BackendModel     string // real model name sent to backend; empty = use Model (the alias)
+	BudgetGroup      string // shared per-model token-budget key; empty = key by Model (per-alias)
 	FallbackModel    string // model to route to when all backends are circuit-open; empty = none
 	ResponseCacheTTL time.Duration
 	Retries          int            // additional full backend-cycle attempts on network error or 5xx (sync-direct only)
@@ -173,6 +174,16 @@ func (d *Def) OperationPath(op string) (string, error) {
 // IsLLM reports whether this service uses the LLM proxy handler.
 func (d *Def) IsLLM() bool {
 	return d.Provider != ""
+}
+
+// BudgetKey is the identifier under which this model's per-model token budget is
+// counted. It is BudgetGroup when set (so mutualized aliases share one budget),
+// otherwise the model name — preserving the per-alias default exactly.
+func (d *Def) BudgetKey() string {
+	if d.BudgetGroup != "" {
+		return d.BudgetGroup
+	}
+	return d.Model
 }
 
 // pathPattern supports openai_paths entries that contain a {model} placeholder,
@@ -490,6 +501,7 @@ func NewRegistry(cfgs []config.ServiceConfig, opts ...RegistryOption) *Registry 
 			InferenceHeaders:     cfg.InferenceHeaders,
 			Provider:             cfg.Provider,
 			BackendModel:         cfg.BackendModel,
+			BudgetGroup:          cfg.BudgetGroup,
 			FallbackModel:        cfg.FallbackModel,
 			ResponseCacheTTL:     time.Duration(cfg.ResponseCacheTTL) * time.Second,
 			Retries:              cfg.Retries,
@@ -932,6 +944,21 @@ func (r *Registry) ModelsForType(serviceType string) []string {
 		}
 	}
 	return models
+}
+
+// ModelBudgetKeys returns a model→budget-key map for every model (across all
+// service types): BudgetGroup when set, else the model name. Used to count and
+// reset the per-model token budget under the shared key for grouped aliases.
+func (r *Registry) ModelBudgetKeys() map[string]string {
+	out := make(map[string]string)
+	for _, models := range r.byTypeModel {
+		for m, def := range models {
+			if m != "" {
+				out[m] = def.BudgetKey()
+			}
+		}
+	}
+	return out
 }
 
 // Types returns all registered service type names (unique).

@@ -613,6 +613,7 @@ func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, d
 			if tr.Limit > 0 {
 				w.Header().Set("X-TokenRateLimit-Limit", strconv.Itoa(tr.Limit))
 				w.Header().Set("X-TokenRateLimit-Remaining", strconv.Itoa(tr.Remaining))
+				ratelimit.WriteOpenAIHeaders(w, "tokens", tr)
 			}
 			if !tr.Allowed {
 				w.Header().Set("Retry-After", strconv.Itoa(int(tr.ResetAfter.Seconds())))
@@ -761,6 +762,12 @@ func (h *SyncHandler) proxyToInference(w http.ResponseWriter, r *http.Request, d
 				}
 			}
 			for key, values := range resp.Header {
+				// Skip an upstream rate-limit header only when the gateway already set
+				// that same key, to avoid duplicate values (resp.Header keys are
+				// canonicalized, so "X-Ratelimit-*"); otherwise let it pass through.
+				if strings.HasPrefix(key, "X-Ratelimit") && w.Header().Get(key) != "" {
+					continue
+				}
 				for _, v := range values {
 					w.Header().Add(key, v)
 				}

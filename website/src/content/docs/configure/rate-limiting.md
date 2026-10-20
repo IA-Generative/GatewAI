@@ -121,6 +121,19 @@ services:
 
 Multiple models can have independent token budgets even if they share the same `type`.
 
+### Sharing a budget across aliases (`budget_group`)
+
+By default each model's token budget is counted separately (keyed by the model name). When several aliases map to one physical backend — e.g. a floating `code`, a pinned `code-1.0`, and a `code-completion` all on one pool — give them the same `budget_group` so a consumer's token budget is counted **once** across all of them, instead of once per alias:
+
+```yaml
+services:
+  - { type: llm, model: code,            budget_group: coder, token_limits: { "*": { token_rate: 1000000, token_period: 24h } }, ... }
+  - { type: llm, model: code-1.0,        budget_group: coder, token_limits: { "*": { token_rate: 1000000, token_period: 24h } }, ... }
+  - { type: llm, model: code-completion, budget_group: coder, token_limits: { "*": { token_rate: 1000000, token_period: 24h } }, ... }
+```
+
+Members of a group must be the same service type and declare **identical** `token_limits` (config validation rejects a mismatch or a member with none). The shared counter is keyed `trl:{consumer}:model:{budget_group}:{user_type}`, surfaced once in `GET /-/usage` (with a `budget_group` field), and reset by `POST /-/quota/reset?model=<any-alias>`. Leaving `budget_group` unset keeps the per-alias default.
+
 ### Key concepts
 
 - **`token_rate`** — maximum total tokens (input + output) allowed per `token_period`. Set to `0` to disable.

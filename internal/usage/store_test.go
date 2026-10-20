@@ -28,7 +28,48 @@ func newStoreWithAllLimits(t *testing.T, retention string, rateLimits, modelLimi
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = rdb.Close() })
-	return usage.NewRedisUsageStore(rdb, retention, rateLimits, modelLimits), mr, rdb
+	return usage.NewRedisUsageStore(rdb, retention, rateLimits, modelLimits, nil), mr, rdb
+}
+
+// A grouped alias reports the shared budget counter, not its own (empty) key.
+func TestGetConsumerUsage_BudgetGroup_SharesCounter(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	modelLimits := map[string]map[string]config.RateLimitConfig{
+		"code":            {"*": {TokenRate: 1000, TokenPeriod: "1h"}},
+		"code-completion": {"*": {TokenRate: 1000, TokenPeriod: "1h"}},
+	}
+	budgetKeys := map[string]string{"code": "qwen", "code-completion": "qwen"}
+	store := usage.NewRedisUsageStore(rdb, "", nil, modelLimits, budgetKeys)
+
+	// Spend accrued under the shared group key; a service-level request keeps the
+	// llm service from being skipped as empty.
+	if err := mr.Set("trl:alice:model:qwen:user", "750"); err != nil {
+		t.Fatal(err)
+	}
+	rdb.ZAdd(context.Background(), "usage:consumer:llm:requests", redis.Z{Score: 3, Member: "alice"})
+
+	cu, err := store.GetConsumerUsage(context.Background(), "alice", "user", []string{"llm"},
+		map[string][]string{"llm": {"code"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got int64 = -1
+	for _, su := range cu.Usage {
+		if su.ServiceType != "llm" {
+			continue
+		}
+		for _, m := range su.Models {
+			if m.Model == "code" {
+				got = m.Tokens
+			}
+		}
+	}
+	if got != 750 {
+		t.Errorf("grouped alias tokens = %d, want 750 (read from shared key)", got)
+	}
 }
 
 func TestGetConsumerUsage_Empty(t *testing.T) {

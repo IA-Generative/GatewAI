@@ -510,6 +510,11 @@ services:
   # (as `backend_model`) in GET /v1/models so developers can see what runs behind
   # each alias.
   #
+  # budget_group optionally mutualizes the per-model token budget across aliases
+  # that hit one backend: give the same budget_group to e.g. "code", "code-1.0"
+  # and "code-completion" and a consumer's token budget is shared across all
+  # three. Empty (default) = per-alias budget, keyed by the model name.
+  #
   # visibility gates a model to specific audiences. A restricted model is filtered
   # out of GET /v1/models — and returns 404 on /v1/* and /jobs — for callers outside
   # its audience, so a hidden model is indistinguishable from a non-existent one.

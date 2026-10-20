@@ -37,7 +37,7 @@ func (f *fakeStore) ListConsumersByType(_ context.Context, _ string, _, _ int64)
 	return f.consumers, f.total, nil
 }
 
-func (f *fakeStore) UpdateRateLimits(_, _ map[string]map[string]config.RateLimitConfig) {}
+func (f *fakeStore) UpdateRateLimits(_, _ map[string]map[string]config.RateLimitConfig, _ map[string]string) {}
 
 func (f *fakeStore) GetUsageReport(_ context.Context, serviceType, period string, from, to time.Time) (*usage.UsageReport, error) {
 	if f.reportErr != nil {

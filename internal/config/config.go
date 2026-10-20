@@ -557,6 +557,11 @@ type ServiceConfig struct {
 	// A 500ms exponential backoff is applied between each cycle.
 	Retries    int              `yaml:"retries"`
 	Guardrails GuardrailsConfig `yaml:"guardrails"`
+	// BudgetGroup optionally shares this model's per-model token budget with other
+	// models carrying the same value, keyed per consumer. Use it to mutualize the
+	// budget of aliases that hit one backend (e.g. "code", "code-1.0" on one pool).
+	// Empty = the budget is keyed by the model name (per-alias, the default).
+	BudgetGroup string `yaml:"budget_group"`
 	// TokenLimits defines per-user-type token budgets for this model's LLM requests.
 	// Maps user type → RateLimitConfig (only token_rate and token_period are used).
 	// "*" acts as fallback when the user_type_header is absent or unmatched.
@@ -1044,7 +1049,75 @@ func (c *Config) validate() error {
 			}
 		}
 	}
+
+	// Budget-group coherence: models sharing a budget_group share one token
+	// counter, so every member must set token_limits (an unlimited member would
+	// be a hole), those limits must agree (a differing token_period would corrupt
+	// the shared window), and the group name must not collide with an ungrouped
+	// model's counter.
+	groups := map[string][]ServiceConfig{}
+	ungroupedModels := map[string]bool{}
+	for _, svc := range c.Services {
+		if svc.BudgetGroup != "" {
+			groups[svc.BudgetGroup] = append(groups[svc.BudgetGroup], svc)
+		} else if svc.Model != "" {
+			ungroupedModels[svc.Model] = true
+		}
+	}
+	for group, members := range groups {
+		if ungroupedModels[group] {
+			return fmt.Errorf("budget_group %q collides with an ungrouped model of the same name", group)
+		}
+		var ref map[string]RateLimitConfig
+		firstType := members[0].Type
+		for _, m := range members {
+			if m.Type != firstType {
+				return fmt.Errorf("budget_group %q spans service types %q and %q; a group must be one service type", group, firstType, m.Type)
+			}
+			if len(m.TokenLimits) == 0 {
+				return fmt.Errorf("model %q in budget_group %q has no token_limits (every member must set them, or the shared budget has a hole)", m.Model, group)
+			}
+			if ref == nil {
+				ref = m.TokenLimits
+			} else if !tokenLimitsEqual(ref, m.TokenLimits) {
+				return fmt.Errorf("model %q in budget_group %q has token_limits different from another member (members sharing a budget must have identical token_rate/token_period)", m.Model, group)
+			}
+		}
+	}
+	// A model name must resolve to one budget key across all services, or the
+	// usage/reset admin surfaces (which key by model name) would read/clear the
+	// wrong counter for it.
+	modelKey := map[string]string{}
+	for _, svc := range c.Services {
+		if svc.Model == "" {
+			continue
+		}
+		key := svc.Model
+		if svc.BudgetGroup != "" {
+			key = svc.BudgetGroup
+		}
+		if prev, ok := modelKey[svc.Model]; ok && prev != key {
+			return fmt.Errorf("model %q resolves to two budget keys (%q and %q); a model name must map to a single budget_group", svc.Model, prev, key)
+		}
+		modelKey[svc.Model] = key
+	}
 	return nil
+}
+
+// tokenLimitsEqual reports whether two token_limits maps define the same budget
+// (same user types, same token_rate and token_period) — the fields that drive
+// the shared token window for a budget_group.
+func tokenLimitsEqual(a, b map[string]RateLimitConfig) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for ut, av := range a {
+		bv, ok := b[ut]
+		if !ok || av.TokenRate != bv.TokenRate || av.TokenPeriod != bv.TokenPeriod {
+			return false
+		}
+	}
+	return true
 }
 
 // validatePoolRateLimit checks a RateLimitConfig used at backend_pools scope

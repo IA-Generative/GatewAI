@@ -105,10 +105,10 @@ func (s *stubTokenLimiter) CheckTokens(context.Context, *http.Request, string) (
 	return ratelimit.CheckResult{Allowed: true}, nil
 }
 func (s *stubTokenLimiter) AddTokens(context.Context, *http.Request, string, int) error { return nil }
-func (s *stubTokenLimiter) CheckModelTokens(context.Context, *http.Request, string) (ratelimit.CheckResult, error) {
+func (s *stubTokenLimiter) CheckModelTokens(context.Context, *http.Request, string, string) (ratelimit.CheckResult, error) {
 	return ratelimit.CheckResult{Allowed: true}, nil
 }
-func (s *stubTokenLimiter) AddModelTokens(context.Context, *http.Request, string, int) error {
+func (s *stubTokenLimiter) AddModelTokens(context.Context, *http.Request, string, string, int) error {
 	return nil
 }
 func (s *stubTokenLimiter) AddTokensFor(_ context.Context, consumer, userType, serviceType string, total int) error {

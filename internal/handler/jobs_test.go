@@ -1038,11 +1038,11 @@ func (m *mockTokenLimiter) AddTokens(_ context.Context, _ *http.Request, service
 	return nil
 }
 
-func (m *mockTokenLimiter) CheckModelTokens(_ context.Context, _ *http.Request, _ string) (ratelimit.CheckResult, error) {
+func (m *mockTokenLimiter) CheckModelTokens(_ context.Context, _ *http.Request, _, _ string) (ratelimit.CheckResult, error) {
 	return ratelimit.CheckResult{Allowed: true}, nil
 }
 
-func (m *mockTokenLimiter) AddModelTokens(_ context.Context, _ *http.Request, _ string, _ int) error {
+func (m *mockTokenLimiter) AddModelTokens(_ context.Context, _ *http.Request, _, _ string, _ int) error {
 	return nil
 }
 
