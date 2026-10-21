@@ -105,7 +105,7 @@ Confirm with the user before executing.
 
 Print a summary:
 - Tags created and pushed
-- Docker images that CI will build (ghcr.io/qatr-io/gatewai/gateway:vX.Y.Z, etc.)
+- Docker images that CI will build (ghcr.io/ia-generative/gatewai/gateway:vX.Y.Z, etc.)
 - Reminder: update relay image tag in `k8s/inference-transcription.yaml` on the cluster (file is gitignored)
 
 ---

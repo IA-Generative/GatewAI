@@ -36,4 +36,4 @@ API Gateway pour les services d'inférence KServe sur Kubernetes — file async 
 ## Documentation
 
 Référence de configuration, guide de déploiement, référence API et runbooks :
-**[qatr-io.github.io/GatewAI](https://qatr-io.github.io/GatewAI)**
+**[ia-generative.github.io/GatewAI](https://ia-generative.github.io/GatewAI)**

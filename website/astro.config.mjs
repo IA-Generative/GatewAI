@@ -2,7 +2,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  site: 'https://qatr-io.github.io',
+  site: 'https://ia-generative.github.io',
   base: '/GatewAI',
   integrations: [
     starlight({
@@ -14,7 +14,7 @@ export default defineConfig({
       },
       customCss: ['./src/styles/landing.css'],
       social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/Qatr-io/GatewAI' },
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/IA-Generative/GatewAI' },
       ],
       sidebar: [
         {
