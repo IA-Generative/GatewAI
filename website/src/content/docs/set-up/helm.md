@@ -126,7 +126,7 @@ config:
           - "/v1/chat/completions"
 ```
 
-`backendPool` is mutually exclusive with `backends`/`inferenceURL` on the same service. See [Service registry](../configure/service-registry.md#backend-pools-backend_pools) for the full field reference and the [Helm chart README](https://github.com/Qatr-io/GatewAI/blob/main/helm/gateway/README.md) for the complete `values.yaml` schema.
+`backendPool` is mutually exclusive with `backends`/`inferenceURL` on the same service. See [Service registry](../configure/service-registry.md#backend-pools-backend_pools) for the full field reference and the [Helm chart README](https://github.com/IA-Generative/GatewAI/blob/main/helm/gateway/README.md) for the complete `values.yaml` schema.
 
 ## ConfigMap hot reload
 
@@ -165,7 +165,7 @@ extraEnvVars:
 
 The relay runs as a standalone Deployment alongside the inference container. Each pod processes one job and exits — KEDA creates a new pod when the Redis queue is non-empty.
 
-Example manifests for a Whisper transcription service are in [`examples/relay-transcription/`](https://github.com/Qatr-io/GatewAI/tree/main/examples/relay-transcription/). Copy and adapt them to your cluster, then apply:
+Example manifests for a Whisper transcription service are in [`examples/relay-transcription/`](https://github.com/IA-Generative/GatewAI/tree/main/examples/relay-transcription/). Copy and adapt them to your cluster, then apply:
 
 ```bash
 # ConfigMap (relay config.yaml)

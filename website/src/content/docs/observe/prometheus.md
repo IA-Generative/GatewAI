@@ -80,7 +80,7 @@ All four are visualized in the "Gateway — Consumers" row of the `gatewai.json`
 
 ## Dashboards
 
-Four Grafana dashboards are available in [`dashboards/`](https://github.com/Qatr-io/GatewAI/tree/main/dashboards/):
+Four Grafana dashboards are available in [`dashboards/`](https://github.com/IA-Generative/GatewAI/tree/main/dashboards/):
 
 | Dashboard | File | Datasource |
 |-----------|------|------------|

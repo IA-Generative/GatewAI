@@ -6,7 +6,7 @@ title: Upgrade guide
 
 ## Breaking changes
 
-Check this table before upgrading across multiple versions — each release's own breaking changes (if any) are also documented in [CHANGELOG.md](https://github.com/Qatr-io/GatewAI/blob/main/CHANGELOG.md).
+Check this table before upgrading across multiple versions — each release's own breaking changes (if any) are also documented in [CHANGELOG.md](https://github.com/IA-Generative/GatewAI/blob/main/CHANGELOG.md).
 
 ### Already released
 
@@ -35,7 +35,7 @@ Check this table before upgrading across multiple versions — each release's ow
 helm repo update
 
 # 2. Review breaking changes
-# — the table above, and https://github.com/Qatr-io/GatewAI/blob/main/CHANGELOG.md
+# — the table above, and https://github.com/IA-Generative/GatewAI/blob/main/CHANGELOG.md
 
 # 3. Upgrade
 helm upgrade gatewai-gateway GatewAI/gatewai-gateway -f values.yaml
@@ -53,7 +53,7 @@ The relay image tag is set directly on the inference Deployment, not managed by 
 # Update the relay container image tag in your Deployment manifest
 # then apply:
 kubectl set image deployment/whisper-large-v3 \
-  relay=ghcr.io/qatr-io/gatewai/relay:<new-tag>
+  relay=ghcr.io/ia-generative/gatewai/relay:<new-tag>
 
 kubectl rollout status deployment/whisper-large-v3
 ```

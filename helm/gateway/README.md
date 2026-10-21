@@ -50,7 +50,7 @@ Gateway (:8080)
 
 | Parameter | Description | Default |
 |---|---|---|
-| `image.repository` | Gateway image | `ghcr.io/qatr-io/gatewai/gateway` |
+| `image.repository` | Gateway image | `ghcr.io/ia-generative/gatewai/gateway` |
 | `image.tag` | Image tag | `v0.20.0` |
 | `image.pullPolicy` | Pull policy | `IfNotPresent` |
 
@@ -558,7 +558,7 @@ The relay sidecar exposes its own `/metrics` endpoint (scraped separately, e.g. 
 helm repo update
 
 # 2. Review breaking changes — table below, and the version-specific notes further down
-#    https://github.com/Qatr-io/GatewAI/blob/main/CHANGELOG.md
+#    https://github.com/IA-Generative/GatewAI/blob/main/CHANGELOG.md
 
 # 3. Upgrade
 helm upgrade gatewai-gateway GatewAI/gatewai-gateway -f values.yaml
@@ -690,7 +690,7 @@ No breaking changes for the chart itself. Requires the relay to be redeployed wi
 No breaking changes.
 
 **New optional parameters:**
-- `alerting.prometheusRule.thresholds.jobsPendingFor` (default `15m`) / `.jobsRunningFor` (default `1h`) — two new `PrometheusRule` alerts, `RelayJobsPendingTooLong` and `RelayJobsRunningTooLong`, based on `gatewai_relay_queue_depth{state}` and `gatewai_jobs_total`. See `values.yaml` (`alerting.prometheusRule.thresholds`) and the [alerting docs](https://qatr-io.github.io/GatewAI/observe/prometheus/#alerts) for the full alert list.
+- `alerting.prometheusRule.thresholds.jobsPendingFor` (default `15m`) / `.jobsRunningFor` (default `1h`) — two new `PrometheusRule` alerts, `RelayJobsPendingTooLong` and `RelayJobsRunningTooLong`, based on `gatewai_relay_queue_depth{state}` and `gatewai_jobs_total`. See `values.yaml` (`alerting.prometheusRule.thresholds`) and the [alerting docs](https://ia-generative.github.io/GatewAI/observe/prometheus/#alerts) for the full alert list.
 
 All shipped alerts also lost their legacy `Kevent` name prefix (e.g. `KeventGatewayHighErrorRate` → `GatewayHighErrorRate`) — update any existing Alertmanager routes/silences matching on the old alert names.
 

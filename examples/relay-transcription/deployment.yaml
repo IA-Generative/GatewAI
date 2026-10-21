@@ -23,7 +23,7 @@ spec:
               nvidia.com/gpu: "1"
 
         - name: relay
-          image: ghcr.io/qatr-io/gatewai/relay:<relay-tag>
+          image: ghcr.io/ia-generative/gatewai/relay:<relay-tag>
           env:
             - name: CONFIG_PATH
               value: /etc/relay/config.yaml

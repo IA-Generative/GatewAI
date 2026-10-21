@@ -36,4 +36,4 @@ API Gateway for KServe inference services on Kubernetes — async job queue, Ope
 ## Documentation
 
 Full configuration reference, deployment guide, API reference, and runbooks:
-**[qatr-io.github.io/GatewAI](https://qatr-io.github.io/GatewAI)**
+**[ia-generative.github.io/GatewAI](https://ia-generative.github.io/GatewAI)**

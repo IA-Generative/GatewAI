@@ -300,7 +300,7 @@ Once configured, exemplar dots appear on latency panels. Clicking a dot opens th
 
 ### Grafana dashboards
 
-Four dashboards are available in [`dashboards/`](https://github.com/Qatr-io/GatewAI/tree/main/dashboards/):
+Four dashboards are available in [`dashboards/`](https://github.com/IA-Generative/GatewAI/tree/main/dashboards/):
 
 | Dashboard | UID | Datasource |
 |-----------|-----|------------|
