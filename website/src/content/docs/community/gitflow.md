@@ -82,6 +82,6 @@ gh pr create --base main --title "fix: critical fix"
 
 # after merge: back-merge to develop
 git checkout develop && git pull
-git merge main
+git merge --no-ff main
 git push origin develop
 ```

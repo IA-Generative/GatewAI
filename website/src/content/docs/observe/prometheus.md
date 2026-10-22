@@ -4,7 +4,7 @@ title: Prometheus
 
 # Prometheus
 
-The gateway exposes a standard Prometheus metrics endpoint. The relay has no HTTP server and does not expose `/metrics` — its metrics are collected in-process and only relevant if you run a Prometheus push gateway or scrape the pod directly via annotations.
+The gateway exposes a standard Prometheus metrics endpoint. The relay runs a minimal HTTP server on `:8080` serving `/health`, but **does not expose `/metrics`** — it's short-lived (KEDA scale-to-zero), so scraping is impractical; ship its metrics via OTLP push instead (see [OpenTelemetry](../observe/opentelemetry)).
 
 ## Scrape endpoint
 
@@ -47,7 +47,6 @@ alerting:
     thresholds:
       gatewayErrorRateWarning: 0.05    # 5%
       gatewayErrorRateCritical: 0.20   # 20%
-      syncJobsInFlight: 20
       relayJobFailureRateWarning: 0.10  # 10%
       relayJobFailureRateCritical: 0.30 # 30%
       relayInferenceP95Seconds: 120
@@ -69,7 +68,7 @@ Two options for tracking per-consumer usage (mutually exclusive):
 
 Avoid `consumerLabels: true` with large or dynamic consumer sets — it creates unbounded label cardinality.
 
-`metricsConfig.topConsumers` populates four gauges, refreshed from Redis every 60s (see [metrics reference](/reference/metrics)):
+`metricsConfig.topConsumers` populates four gauges, refreshed from Redis every 60s (see [metrics reference](../reference/metrics)):
 
 - `gatewai_llm_consumer_tokens_top` — LLM-proxy token usage
 - `gatewai_usage_tokens_top` — token usage on non-LLM-proxy service types
@@ -89,9 +88,9 @@ Four Grafana dashboards are available in [`dashboards/`](https://github.com/IA-G
 | GatewAI — Audit Trail LLM | `gatewai-audit-trail.json` | Prometheus + Loki |
 | GatewAI — Traces | `gatewai-traces.json` | Tempo |
 
-Import via **Dashboards → Import → Upload JSON file**. The Prometheus dashboards include latency panels with [exemplar](/observe/opentelemetry#grafana--tempo-exemplars) support — clicking an exemplar dot jumps to the corresponding trace in Tempo.
+Import via **Dashboards → Import → Upload JSON file**. The Prometheus dashboards include latency panels with [exemplar](../observe/opentelemetry#grafana--tempo-exemplars) support — clicking an exemplar dot jumps to the corresponding trace in Tempo.
 
-For traces, OTLP metrics push (relay), and log forwarding see [OpenTelemetry](/observe/opentelemetry).
+For traces, OTLP metrics push (relay), and log forwarding see [OpenTelemetry](../observe/opentelemetry).
 
 ## Alerts
 
@@ -104,7 +103,6 @@ All alerts are defined in `helm/gateway/templates/prometheusrule.yaml`. Threshol
 | `GatewayHighErrorRate` | warning | > X% of requests return 5xx over 5 min | `gatewayErrorRateWarning` |
 | `GatewayHighErrorRate` | critical | > X% of requests return 5xx over 5 min | `gatewayErrorRateCritical` |
 | `GatewayS3Errors` | warning | Any S3 errors in the last 5 min | — |
-| `GatewaySyncJobsInFlightHigh` | warning | Sync connections above threshold for 5 min | `syncJobsInFlight` |
 | `GatewayRateLimitHighRejectionRate` | warning | > X% of requests rate-limited per service type | `rateLimitRejectionRateWarning` |
 | `GatewayRateLimitErrors` | warning | Redis errors in rate limiter (fail-open) | — |
 

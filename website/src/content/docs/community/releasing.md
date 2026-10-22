@@ -10,7 +10,7 @@ title: Releasing
 - [ ] `CHANGELOG.md` updated with the new version
 - [ ] Helm `helm/gateway/Chart.yaml` version bumped (if chart changed)
 - [ ] Helm `helm/gateway/values.yaml` `image.tag` updated
-- [ ] `examples/inference-service.yaml` relay image tag updated (if relay changed)
+- [ ] `k8s/deployment-transcription.yaml` relay image tag updated (if relay changed)
 
 ## Tag and release
 
@@ -39,7 +39,7 @@ After the release tag is pushed:
 
 ```bash
 git checkout develop && git pull
-git merge main
+git merge --no-ff main
 git push origin develop
 ```
 

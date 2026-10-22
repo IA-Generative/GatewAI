@@ -22,7 +22,7 @@ Gateway
                       └── POST plaintext → inference backend
 ```
 
-The result file written back to S3 by the relay is **not** encrypted — only the input is.
+Both the uploaded input and the result file written back to S3 by the relay are **encrypted** when an encryption key is configured — the relay encrypts on upload, same as the gateway.
 
 ## Algorithm
 

@@ -47,7 +47,7 @@ Setting `deprecated: true` on a service entry doesn't change routing or availabi
 
 Deprecation is applied at the finest granularity the spec allows:
 
-- The per-model swagger doc served at `/swagger/{type}/{model}` (when `swagger_url` is configured) always marks its operations deprecated.
+- The per-model swagger doc served at `/docs/spec/{type}/{model}` (when `swagger_url` is configured) always marks its operations deprecated.
 - A sync path shared by multiple models (e.g. several models behind the same `/v1/*` route) is only marked `deprecated: true` at the operation level once **every** model on that path is deprecated — otherwise still-active models on the same path would inherit a misleading warning. Until then, the deprecated model(s) are called out by name in the `model` field's description instead.
 
 ## Model resolution order
@@ -123,8 +123,9 @@ For sync-direct services whose backend requires authentication, add `inference_h
 
 Headers are injected on every outgoing request to the backend. Values support `${VAR}` expansion. Config headers override client headers with the same name.
 
-!!! note
-    `inference_headers` only applies to **sync-direct** proxy and **LLM proxy**. Async jobs processed by the relay are unaffected.
+:::note
+`inference_headers` only applies to **sync-direct** proxy and **LLM proxy**. Async jobs processed by the relay are unaffected.
+:::
 
 ## LLM proxy services
 
@@ -195,7 +196,7 @@ Enforcement is uniform and **fail-closed**: a caller outside the audience (inclu
 
 A hidden model is therefore **indistinguishable from a non-existent one** — there is no `403` that would leak its existence.
 
-Visibility composes with [access control](../configure/configuration.md) (`policies`): a request must satisfy **both** the model's visibility *and* any authz allow-rule. Visibility gates discovery; `policies` gates authorization. The Prometheus counter `gatewai_model_hidden_total{service_type, model}` increments whenever a request is rejected because the model was hidden from the caller.
+Visibility composes with [access control](../configure/access-control) (`policies`): a request must satisfy **both** the model's visibility *and* any authz allow-rule. Visibility gates discovery; `policies` gates authorization. The Prometheus counter `gatewai_model_hidden_total{service_type, model}` increments whenever a request is rejected because the model was hidden from the caller.
 
 ## Sync concurrency cap (`max_concurrent_sync`)
 

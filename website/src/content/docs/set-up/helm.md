@@ -31,13 +31,13 @@ helm upgrade --install gatewai-gateway ./helm/gateway -f values.yaml
 
 ```yaml
 image:
-  tag: "v0.14.0"
+  tag: "v0.25.0"
 
 config:
   s3:
     endpoint: "https://s3.fr-par.scw.cloud"
     region: "fr-par"
-    bucket: "my-GatewAI-jobs"
+    bucket: "my-gatewai-jobs"
   redis:
     addr: "redis:6379"
 
@@ -144,10 +144,10 @@ configReloader:
 ingress:
   enabled: true
   className: nginx
-  host: GatewAI.example.com
+  host: gatewai.example.com
   tls:
     enabled: true
-    secretName: GatewAI-tls
+    secretName: gatewai-tls
 ```
 
 ## Extra environment variables
@@ -157,7 +157,7 @@ extraEnvVars:
   - name: ENCRYPTION_KEY
     valueFrom:
       secretKeyRef:
-        name: GatewAI-encryption
+        name: gatewai-encryption
         key: key
 ```
 

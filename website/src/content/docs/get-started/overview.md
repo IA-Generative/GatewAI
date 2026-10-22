@@ -7,7 +7,7 @@ title: Architecture overview
 GatewAI consists of two independent components deployed separately:
 
 - **Gateway** — HTTP server that accepts requests, routes them, and returns results
-- **Relay** — standalone Kubernetes Deployment alongside the inference pod; one pod per job lifecycle
+- **Relay** — a container co-located with the inference container in the same pod (reaches the model on `127.0.0.1`); scaled per-job by KEDA (scale-to-zero), so one running pod per in-flight job
 
 ## Infrastructure dependencies
 
@@ -30,7 +30,7 @@ GatewAI consists of two independent components deployed separately:
 
 ### Relay
 
-- Runs as a separate container in the inference Deployment (not a sidecar)
+- Runs as a container co-located with the inference container in the same pod (reaches it on `127.0.0.1`)
 - Waits for the local inference service to be ready (`/health` poll)
 - Pops one job from `relay:<model>:pending` via `BLMOVE LEFT RIGHT` (moves it to `relay:<model>:processing`)
 - Subscribes to `relay:<model>:cancel` before reading the job to avoid a cancel-race window

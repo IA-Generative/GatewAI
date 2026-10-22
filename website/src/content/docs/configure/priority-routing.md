@@ -42,7 +42,7 @@ When `server.consumer_header` is set (e.g. `X-Consumer-Username`, injected by AP
 2. Maintains `consumer:{name}:jobs` sorted set (score = Unix timestamp, same TTL as job)
 3. Exposes `GET /jobs` to list a consumer's jobs (paginated, most-recent-first)
 4. Enforces ownership on `GET /jobs/{service_type}/{id}`: if the header is present, the job's `consumer_name` must match — returns `404` on mismatch
-5. Increments `GatewAI_jobs_by_consumer_total{mode, service_type, model, consumer}` with `mode=async-priority` for priority jobs
+5. Increments `gatewai_jobs_by_consumer_total{mode, service_type, model, consumer}` with `mode=async-priority` for priority jobs
 
 ```yaml
 server:

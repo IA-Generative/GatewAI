@@ -4,7 +4,7 @@ title: Guardrails
 
 # Guardrails
 
-GatewAI can scan for **PII** and **secrets** both on the way **in** (the request, before it reaches the backend) and on the way **out** (the model's response, before it returns to the client — output DLP). Guardrails run on the sync LLM-proxy path (`POST /v1/*`) and are configured per service.
+GatewAI can scan for **PII** and **secrets** both on the way **in** (the request, before it reaches the backend) and on the way **out** (the model's response, before it returns to the client — output DLP). The input/output stages run on the sync LLM-proxy path (`POST /v1/*`); input scanning also guards async submit text on `POST /jobs`, and a separate **async result** stage (`guardrails.async`) scans completed async job results (transcripts, OCR, …). Beyond regex PII/secrets, guardrails can also run **model-backed detectors** (e.g. prompt-injection) and scan **tool-call arguments**, not just message content. Configured per service.
 
 ## Configuration
 
@@ -38,7 +38,12 @@ guardrails:
 Output actions mirror input but operate on `choices[*].message.content`: `redact` masks matches before the response is returned (and the redacted body is what gets cached), `block` returns `422 {"error":"response blocked by guardrails"}`, `flag` logs only.
 
 :::note
-**Streaming responses are never modified or blocked.** When the response streams (`stream: true`), the output stage always degrades to `flag` — it detects, logs, and increments the metric after the stream completes, but cannot redact or block bytes already sent. Use a non-streaming request if you need output `redact`/`block` enforcement.
+**Streaming output** (`stream: true`) is governed by `output.streaming`:
+- `flag` (default) — streams unbuffered; detects and logs without modifying bytes.
+- `block` — holds a rolling window of `stream_window_tokens` (default 64) and terminates the stream on a violation.
+- `buffer` — holds the rolling window, redacts matched spans, then releases.
+
+The held window means a match up to the window length is never split; a pattern longer than the window may release a prefix before detection — raise `stream_window_tokens` or use a non-streaming request for strict enforcement. (Streamed `delta.tool_calls` argument deltas are not yet scanned.)
 :::
 
 ## Actions
@@ -85,6 +90,7 @@ Content-Type: application/json
 
 ```
 gatewai_guardrails_total{service_type, model, stage, action, result}         # stage = input | output; result = blocked | redacted | flagged
+gatewai_guardrails_async_total{service_type, model, detector, result}        # async result stage (guardrails.async); result = flagged | blocked | redacted | error
 gatewai_guardrails_pii_blocked_total{service_type, model}                    # retained for continuity (block only)
 gatewai_guardrails_evaluations_total{service_type, model, stage}             # every evaluation, regardless of outcome — denominator for a hit rate
 ```

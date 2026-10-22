@@ -10,7 +10,7 @@ title: Request flows
 
 ![Async flow](/GatewAI/schema/async-flow.png)
 
-**Priority path:** when `server.priority_header` is set and the header is present in the request, `LPUSH` est utilisé à la place de `RPUSH` — le job atterrit en tête de queue et est traité en premier par le prochain pod relay.
+**Priority path:** when `server.priority_header` is set and the header is present in the request, `LPUSH` is used instead of `RPUSH` — the job lands at the head of the queue and is picked up first by the next relay pod.
 
 **Client polling:**
 
