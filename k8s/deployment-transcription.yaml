@@ -93,7 +93,7 @@ spec:
               nvidia.com/mig-1g.10gb: "1"
         # ── Relay consumer ───────────────────────────────────────────────────
         - name: relay
-          image: ghcr.io/ia-generative/gatewai/relay:v0.12.0
+          image: ghcr.io/ia-generative/gatewai/relay:v0.13.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080

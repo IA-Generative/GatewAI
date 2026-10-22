@@ -18,6 +18,22 @@ Versioning: each component is versioned independently — see tag conventions be
 
 ### [Unreleased]
 
+### [v0.26.0] — 2026-10-22
+
+#### Changed
+
+- **Go 1.27 + Debian 13 base image.** Build toolchain bumped to Go 1.27 (`go.mod` + `golang:1.27-alpine` builder); runtime base moved to `gcr.io/distroless/static-debian13:nonroot` — the `static-debian12` images were deprecated and frozen upstream, and Go 1.25 is end-of-life.
+- **Dependency security bumps** — resolved 14 reachable CVEs flagged by `govulncheck`: `golang.org/x/net` v0.60.0, `golang.org/x/text` v0.42.0, `github.com/go-chi/chi/v5` v5.3.0, `google.golang.org/grpc` v1.83.2, `github.com/aws/aws-sdk-go-v2/service/s3` v1.97.3, and the OpenTelemetry stack to the coherent v1.47.0 train. Added Dependabot (Go modules, Actions, Docker).
+- **Repository moved to the `IA-Generative` GitHub org.** Images are now `ghcr.io/ia-generative/gatewai/gateway`, the Helm repo and docs are at `https://ia-generative.github.io/GatewAI`, and the LICENSE copyright holder is `IA-Generative`. No API or behaviour change.
+
+#### Fixed
+
+- **OTLP exporter posted to the collector root (`/`) and 404'd.** The traces/metrics/logs exporters used `WithEndpointURL(baseURL)`, which (per OTel v1.47) targets the root path instead of appending `/v1/traces` etc. Now uses `WithEndpoint(host)` so the per-signal default path is appended — telemetry export works again (gateway + relay).
+
+#### Docs
+
+- Full documentation-accuracy pass of the `website/` docs and chart README (metric-name casing `GatewAI_`→`gatewai_`, relay topology, relay config schema, endpoints, broken links); documented the OpenAI-compatible rate-limit headers; removed the obsolete `ARCHITECTURE.md`; removed the dead `GatewaySyncJobsInFlightHigh` PrometheusRule alert and fixed runbook URLs.
+
 ### [v0.25.0] — 2026-10-20
 
 #### Added
@@ -793,6 +809,17 @@ New `lifecycle.gc` config block:
 
 ### [Unreleased]
 
+### [v0.13.0] — 2026-10-22
+
+#### Changed
+
+- **Go 1.27 + Debian 13 base image** — same toolchain and runtime-base bump as the gateway; dependency security bumps (`golang.org/x/net`, `google.golang.org/grpc`, the OpenTelemetry v1.47.0 train, `aws-sdk-go-v2/s3`) resolving the `govulncheck`-reported CVEs.
+- Images now published under `ghcr.io/ia-generative/gatewai/relay` (org migration to IA-Generative).
+
+#### Fixed
+
+- **OTLP exporter 404** — same `WithEndpointURL`→`WithEndpoint` fix as the gateway; the relay's traces/metrics now reach the collector (validated on hprod).
+
 ### [v0.12.0] — 2026-08-27
 
 #### Added
@@ -1079,6 +1106,20 @@ Version bump aligned with gateway v0.11.0 release. No relay code changes.
 ---
 
 ## Helm chart (gatewai-gateway)
+
+### [0.26.0] — 2026-10-22
+
+#### Changed
+- `version` → `0.26.0`, `appVersion` / `image.tag` → `v0.26.0`.
+- Default gateway/relay images now under `ghcr.io/ia-generative/gatewai/*` (org migration); `runbookBaseURL` default → `https://ia-generative.github.io/GatewAI/manage/runbooks`.
+
+#### Removed
+- Dead `GatewaySyncJobsInFlightHigh` PrometheusRule alert (its metric `gatewai_sync_jobs_in_flight` is not emitted) and its unused `syncJobsInFlight` threshold.
+
+#### Fixed
+- README metrics tables: corrected `gatewai_*` metric-name casing, dropped stale Kafka/sync/proxy-era metrics, and fixed the "relay exposes `/metrics`" note.
+
+---
 
 ### [0.23.1] — 2026-09-28
 
