@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	otelprom "go.opentelemetry.io/contrib/bridges/prometheus"
@@ -27,6 +28,22 @@ type slogErrorHandler struct{}
 
 func (slogErrorHandler) Handle(err error) {
 	slog.Error("otel sdk error", "error", err)
+}
+
+// splitOTLPEndpoint parses an OTLP/HTTP base endpoint ("http://host:4318") into
+// the host:port to target, any explicit non-root path, and whether the transport
+// is plaintext. A path-less endpoint is applied via WithEndpoint so the per-signal
+// default path (/v1/traces, /v1/metrics, /v1/logs) is appended — WithEndpointURL on
+// a path-less URL instead posts to "/" and the collector 404s.
+func splitOTLPEndpoint(endpoint string, insecureCfg bool) (host, path string, insecure bool) {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" {
+		return endpoint, "", insecureCfg
+	}
+	if p := u.Path; p != "" && p != "/" {
+		path = p
+	}
+	return u.Host, path, insecureCfg || u.Scheme != "https"
 }
 
 // Telemetry holds pre-created Tracer and Meter for the service.
@@ -99,11 +116,14 @@ func Setup(ctx context.Context, cfg OtelConfig, svcName, svcVersion string) (*Te
 	// ── Traces ────────────────────────────────────────────────────────────────
 	if cfg.Traces.Enabled {
 		endpoint, headers := resolveSignal(cfg.Exporter, cfg.Traces.Endpoint, cfg.Traces.Headers)
-		opts := []otlptracehttp.Option{
-			otlptracehttp.WithEndpointURL(endpoint),
-			otlptracehttp.WithHeaders(headers),
+		host, path, insecure := splitOTLPEndpoint(endpoint, cfg.Exporter.Insecure)
+		opts := []otlptracehttp.Option{otlptracehttp.WithHeaders(headers)}
+		if path != "" {
+			opts = append(opts, otlptracehttp.WithEndpointURL(endpoint))
+		} else {
+			opts = append(opts, otlptracehttp.WithEndpoint(host))
 		}
-		if cfg.Exporter.Insecure {
+		if insecure {
 			opts = append(opts, otlptracehttp.WithInsecure())
 		}
 		exp, err := otlptracehttp.New(ctx, opts...)
@@ -132,11 +152,14 @@ func Setup(ctx context.Context, cfg OtelConfig, svcName, svcVersion string) (*Te
 	if cfg.Metrics.Enabled {
 		endpoint, headers := resolveSignal(cfg.Exporter, cfg.Metrics.Endpoint, cfg.Metrics.Headers)
 		interval := cfg.Metrics.IntervalDuration()
-		opts := []otlpmetrichttp.Option{
-			otlpmetrichttp.WithEndpointURL(endpoint),
-			otlpmetrichttp.WithHeaders(headers),
+		host, path, insecure := splitOTLPEndpoint(endpoint, cfg.Exporter.Insecure)
+		opts := []otlpmetrichttp.Option{otlpmetrichttp.WithHeaders(headers)}
+		if path != "" {
+			opts = append(opts, otlpmetrichttp.WithEndpointURL(endpoint))
+		} else {
+			opts = append(opts, otlpmetrichttp.WithEndpoint(host))
 		}
-		if cfg.Exporter.Insecure {
+		if insecure {
 			opts = append(opts, otlpmetrichttp.WithInsecure())
 		}
 		exp, err := otlpmetrichttp.New(ctx, opts...)
@@ -165,11 +188,14 @@ func Setup(ctx context.Context, cfg OtelConfig, svcName, svcVersion string) (*Te
 	// ── Logs ──────────────────────────────────────────────────────────────────
 	if cfg.Logs.Enabled {
 		endpoint, headers := resolveSignal(cfg.Exporter, cfg.Logs.Endpoint, cfg.Logs.Headers)
-		opts := []otlploghttp.Option{
-			otlploghttp.WithEndpointURL(endpoint),
-			otlploghttp.WithHeaders(headers),
+		host, path, insecure := splitOTLPEndpoint(endpoint, cfg.Exporter.Insecure)
+		opts := []otlploghttp.Option{otlploghttp.WithHeaders(headers)}
+		if path != "" {
+			opts = append(opts, otlploghttp.WithEndpointURL(endpoint))
+		} else {
+			opts = append(opts, otlploghttp.WithEndpoint(host))
 		}
-		if cfg.Exporter.Insecure {
+		if insecure {
 			opts = append(opts, otlploghttp.WithInsecure())
 		}
 		exp, err := otlploghttp.New(ctx, opts...)
