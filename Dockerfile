@@ -16,6 +16,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 # distroless/static includes CA certificates (needed for HTTPS MinIO/S3 + webhooks)
 FROM gcr.io/distroless/static-debian13:nonroot
 
+# Links the ghcr package to the repo (source tab, inherited perms).
+LABEL org.opencontainers.image.source="https://github.com/IA-Generative/GatewAI"
+
 WORKDIR /app
 
 COPY --from=builder /app/gateway .

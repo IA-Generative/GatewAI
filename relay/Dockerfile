@@ -10,6 +10,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /relay ./cmd/relay
 
 FROM gcr.io/distroless/static-debian13:nonroot
 
+# Links the ghcr package to the repo (source tab, inherited perms).
+LABEL org.opencontainers.image.source="https://github.com/IA-Generative/GatewAI"
+
 COPY --from=builder /relay /relay
 COPY config.yaml /config.yaml
 
