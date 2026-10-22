@@ -31,7 +31,7 @@ spec:
           annotations:
             summary: "High gateway error rate ({{ "{{" }} $value | humanizePercentage {{ "}}" }})"
             description: "More than {{ mulf .Values.alerting.prometheusRule.thresholds.gatewayErrorRateWarning 100 }}% of gateway requests are returning 5xx errors."
-            runbook_url: "{{ $runbookBase }}/GatewayHighErrorRate"
+            runbook_url: "{{ $runbookBase }}#gatewayhigherrorrate"
 
         - alert: GatewayHighErrorRate
           expr: |
@@ -45,7 +45,7 @@ spec:
           annotations:
             summary: "Critical gateway error rate ({{ "{{" }} $value | humanizePercentage {{ "}}" }})"
             description: "More than {{ mulf .Values.alerting.prometheusRule.thresholds.gatewayErrorRateCritical 100 }}% of gateway requests are returning 5xx errors."
-            runbook_url: "{{ $runbookBase }}/GatewayHighErrorRate"
+            runbook_url: "{{ $runbookBase }}#gatewayhigherrorrate"
 
         - alert: GatewayS3Errors
           expr: sum(increase(gatewai_s3_errors_total[5m])) > 0
@@ -55,7 +55,7 @@ spec:
           annotations:
             summary: "Gateway S3 errors"
             description: "The gateway encountered S3 errors (upload/get/delete)."
-            runbook_url: "{{ $runbookBase }}/GatewayS3Errors"
+            runbook_url: "{{ $runbookBase }}#gateways3errors"
 
         - alert: GatewayRateLimitHighRejectionRate
           expr: |
@@ -69,7 +69,7 @@ spec:
           annotations:
             summary: "High rate-limit rejection rate on {{ "{{" }} $labels.service_type {{ "}}" }} ({{ "{{" }} $value | humanizePercentage {{ "}}" }})"
             description: "More than {{ mulf .Values.alerting.prometheusRule.thresholds.rateLimitRejectionRateWarning 100 }}% of requests are being rate-limited for service_type={{ "{{" }} $labels.service_type {{ "}}" }}. Check quota configuration or consumer activity."
-            runbook_url: "{{ $runbookBase }}/GatewayRateLimitHighRejectionRate"
+            runbook_url: "{{ $runbookBase }}#gatewayratelimithighrejectionrate"
 
         - alert: GatewayRateLimitErrors
           expr: sum(increase(gatewai_ratelimit_errors_total[5m])) > 0
@@ -79,7 +79,7 @@ spec:
           annotations:
             summary: "Rate limiter Redis errors (fail-open)"
             description: "The rate limiter encountered Redis errors — requests are being allowed through (fail-open). Check Redis connectivity."
-            runbook_url: "{{ $runbookBase }}/GatewayRateLimitErrors"
+            runbook_url: "{{ $runbookBase }}#gatewayratelimiterrors"
 
     - name: gatewai-relay
       rules:
@@ -97,7 +97,7 @@ spec:
           annotations:
             summary: "High relay job failure rate on {{ "{{" }} $labels.service_type {{ "}}" }} ({{ "{{" }} $value | humanizePercentage {{ "}}" }})"
             description: "More than {{ mulf .Values.alerting.prometheusRule.thresholds.relayJobFailureRateWarning 100 }}% of relay jobs are failing for service_type={{ "{{" }} $labels.service_type {{ "}}" }}."
-            runbook_url: "{{ $runbookBase }}/RelayJobFailureRate"
+            runbook_url: "{{ $runbookBase }}#relayjobfailurerate"
 
         - alert: RelayJobFailureRate
           expr: |
@@ -111,7 +111,7 @@ spec:
           annotations:
             summary: "Critical relay job failure rate on {{ "{{" }} $labels.service_type {{ "}}" }} ({{ "{{" }} $value | humanizePercentage {{ "}}" }})"
             description: "More than {{ mulf .Values.alerting.prometheusRule.thresholds.relayJobFailureRateCritical 100 }}% of relay jobs are failing for service_type={{ "{{" }} $labels.service_type {{ "}}" }}."
-            runbook_url: "{{ $runbookBase }}/RelayJobFailureRate"
+            runbook_url: "{{ $runbookBase }}#relayjobfailurerate"
 
         - alert: RelayInferenceSlow
           expr: |
@@ -126,7 +126,7 @@ spec:
           annotations:
             summary: "Slow inference p95 on {{ "{{" }} $labels.service_type {{ "}}" }} ({{ "{{" }} $value | humanizeDuration {{ "}}" }})"
             description: "95th percentile inference duration exceeds {{ .Values.alerting.prometheusRule.thresholds.relayInferenceP95Seconds }}s for service_type={{ "{{" }} $labels.service_type {{ "}}" }}."
-            runbook_url: "{{ $runbookBase }}/RelayInferenceSlow"
+            runbook_url: "{{ $runbookBase }}#relayinferenceslow"
 
         - alert: RelayS3Errors
           expr: sum(increase(gatewai_relay_s3_errors_total[5m])) > 0
@@ -135,8 +135,8 @@ spec:
             severity: warning
           annotations:
             summary: "Relay S3 errors"
-            description: "Relay sidecars encountered S3 errors (get/put/delete) — jobs may be failing."
-            runbook_url: "{{ $runbookBase }}/RelayS3Errors"
+            description: "The relay encountered S3 errors (get/put/delete) — jobs may be failing."
+            runbook_url: "{{ $runbookBase }}#relays3errors"
 
         - alert: RelayJobsPendingTooLong
           expr: |
@@ -153,7 +153,7 @@ spec:
           annotations:
             summary: "No jobs starting for model {{ "{{" }} $labels.model {{ "}}" }} ({{ "{{" }} $value {{ "}}" }} pending, none completed)"
             description: "The relay pending queue for model={{ "{{" }} $labels.model {{ "}}" }} has stayed non-empty with zero completed/failed jobs for {{ .Values.alerting.prometheusRule.thresholds.jobsPendingFor }} — the relay is likely down or not picking up jobs at all. This intentionally does not fire for a relay that is merely overloaded (arrival rate > capacity) but still consuming — that shows up as a growing but draining pending queue with a nonzero completion rate; use `gatewai_relay_queue_depth{state=\"pending\"}` directly if you also want a capacity-pressure alert."
-            runbook_url: "{{ $runbookBase }}/RelayJobsPendingTooLong"
+            runbook_url: "{{ $runbookBase }}#relayjobspendingtoolong"
 
         - alert: RelayJobsRunningTooLong
           expr: |
@@ -170,7 +170,7 @@ spec:
           annotations:
             summary: "Jobs stuck processing for model {{ "{{" }} $labels.model {{ "}}" }} ({{ "{{" }} $value {{ "}}" }} in queue, none completed)"
             description: "The relay processing queue for model={{ "{{" }} $labels.model {{ "}}" }} has stayed non-empty with zero completed/failed jobs for {{ .Values.alerting.prometheusRule.thresholds.jobsRunningFor }} — a job is likely stuck or the relay crashed mid-job. Queue depth alone can't identify which job (no job_id label); this alert only fires when nothing at all is finishing, so it stays quiet under healthy concurrent load. Inspect via `LRANGE relay:{{ "{{" }} $labels.model {{ "}}" }}:processing 0 -1` and relay logs to find the stuck job."
-            runbook_url: "{{ $runbookBase }}/RelayJobsRunningTooLong"
+            runbook_url: "{{ $runbookBase }}#relayjobsrunningtoolong"
 
         {{- with .Values.alerting.prometheusRule.extraRules }}
         {{- toYaml . | nindent 8 }}

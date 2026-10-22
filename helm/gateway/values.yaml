@@ -480,8 +480,9 @@ alerting:
     # Labels supplémentaires — doit correspondre au ruleSelector du Prometheus Operator.
     # Exemple : release: kube-prometheus-stack
     additionalLabels: {}
-    # URL de base des runbooks. Les URLs finales seront <runbookBaseURL>/<AlertName>.
-    runbookBaseURL: "https://ia-generative.github.io/gatewai-ai/runbooks"
+    # Base des runbooks. Les URLs finales sont <runbookBaseURL>#<alertname-minuscule>
+    # (page unique avec ancres par alerte).
+    runbookBaseURL: "https://ia-generative.github.io/GatewAI/manage/runbooks"
     # Seuils modifiables par alerte.
     thresholds:
       # Taux d'erreur gateway (0.05 = 5%)

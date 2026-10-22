@@ -228,6 +228,64 @@ Common causes: S3 credentials not injected into relay pod; `ENCRYPTION_KEY` mism
 3. Check network policies — inference pods must reach the S3 endpoint
 4. If input files disappear prematurely: check `redis.pending_max_age` and `lifecycle.job_ttl.pending` vs inference duration
 
+## RelayJobsPendingTooLong
+
+**Severity:** warning — **Component:** Relay
+
+The pending queue for a model has stayed non-empty with **zero** completed/failed jobs for the window (`alerting.prometheusRule.thresholds.jobsPendingFor`, default 15m) — the relay is likely down or not consuming at all.
+
+**Impact:** submitted jobs for that model never start; clients see them stuck in `pending` until they expire.
+
+**Diagnosis**
+
+```bash
+# Pending depth per model
+sum by (model) (gatewai_relay_queue_depth{state="pending"})
+
+# Is anything completing at all?
+sum by (model) (increase(gatewai_jobs_total[15m]))
+
+# Is a relay pod running for this model? (KEDA scales from zero on queue depth)
+kubectl get pods -n <namespace> | grep <model>
+```
+
+This alert deliberately does **not** fire for a relay that is merely overloaded but still draining (nonzero completion rate). Common causes: KEDA not scaling up (check the trigger + Redis auth), the inference pod not ready, or the relay image failing to pull/start.
+
+**Mitigation**
+
+1. Confirm a relay pod exists and is `Running`; check its logs for startup / inference-readiness errors.
+2. Verify the KEDA trigger points at `relay:<model>:pending` and can reach Redis.
+3. If a relay is up but idle, confirm it popped the job (`relay:<model>:processing`) and holds the lease.
+
+## RelayJobsRunningTooLong
+
+**Severity:** warning — **Component:** Relay
+
+The processing queue for a model has stayed non-empty with **zero** completed/failed jobs for the window (`jobsRunningFor`, default 1h) — a job is likely stuck or the relay crashed mid-job.
+
+**Impact:** a job never completes; its long-poll / webhook never fires.
+
+**Diagnosis**
+
+```bash
+# Processing depth per model
+sum by (model) (gatewai_relay_queue_depth{state="processing"})
+
+# Inspect the stuck entries (the metric has no job_id label)
+redis-cli LRANGE relay:<model>:processing 0 -1
+
+# Relay logs for the stuck job
+kubectl logs <relay-pod> -n <namespace>
+```
+
+Common causes: inference hanging with no timeout; a relay crash where the lease reaper has not yet requeued the job; or a job that repeatedly dead-letters.
+
+**Mitigation**
+
+1. Confirm the gateway GC reaper is enabled (`lifecycle.gc.enabled`) — it requeues abandoned `processing` entries once the `lease_ttl` lease expires, and dead-letters after `max_reap_attempts`.
+2. Inspect the stuck entry and relay logs to identify the job.
+3. Ensure the inference backend has a sane per-request timeout.
+
 ## Dead-letter queues
 
 Two Redis lists collect items that could not be delivered or recovered automatically. They are **not** self-draining — inspect and act on them.

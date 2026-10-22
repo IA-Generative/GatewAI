@@ -83,7 +83,7 @@ Client
   ▼
 Gateway (:8080)
   ├── Upload file → S3
-  ├── Save job record → Redis (TTL 72h)
+  ├── Save job record → Redis (TTL per `lifecycle.job_ttl`; 2h safety-net default)
   └── RPUSH job → Redis queue relay:<model>:pending
                                     │
                         Relay Deployment (pull consumer)
