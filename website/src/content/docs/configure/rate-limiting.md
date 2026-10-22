@@ -272,28 +272,64 @@ Retry-After: 42
 
 ---
 
+## Rate-limit response headers
+
+On **every** response — not only `429` — the gateway advertises the caller's current budget so clients can self-throttle. Two header families are emitted side by side: an OpenAI-compatible set and the original (legacy) set.
+
+### OpenAI-compatible headers
+
+These use the names the OpenAI client libraries already read, so an OpenAI SDK pointed at the gateway picks up request/token budget with no extra code:
+
+| Header | Meaning |
+|---|---|
+| `x-ratelimit-limit-requests` | Request-rate limit for the current window |
+| `x-ratelimit-remaining-requests` | Requests remaining in the window |
+| `x-ratelimit-reset-requests` | Time until the request window resets (Go duration, e.g. `1m0s`) |
+| `x-ratelimit-limit-tokens` | Token budget for the current window |
+| `x-ratelimit-remaining-tokens` | Tokens remaining in the window |
+| `x-ratelimit-reset-tokens` | Time until the token window resets (e.g. `6m0s`) |
+
+- The `-requests` headers are emitted on both async submit (`POST /jobs/{service_type}`) and sync (`POST /v1/*`); the `-tokens` headers on the sync LLM path.
+- When more than one token budget applies (service-type-wide plus a per-model or `budget_group` budget), the headers report the **tightest** remaining budget.
+- A pair is **omitted when its limit is `0`** (unlimited); `reset` is omitted until a window has actually been opened.
+
+### Legacy headers
+
+Kept for backward compatibility and emitted alongside the OpenAI set:
+
+| Header | Scope | Notes |
+|---|---|---|
+| `X-RateLimit-Limit` / `-Remaining` / `-Reset` | request rate | `Reset` is a Unix timestamp (seconds) |
+| `X-TokenRateLimit-Limit` / `-Remaining` / `-Reset` | token budget | sync LLM path |
+| `X-Concurrent-Limit` / `-Remaining` | concurrent jobs | async |
+| `X-ProcessingTime-Limit` / `-Remaining` | processing-time budget | async |
+
+> The OpenAI `*-reset-*` headers use a **duration** (`6m0s`); the legacy `X-RateLimit-Reset` uses a **Unix timestamp**. Both describe the same window.
+
+---
+
 ## Prometheus metrics
 
 | Metric | Labels | Description |
 |---|---|---|
-| `GatewAI_ratelimit_requests_total` | `service_type, user_type, result` | Request-rate checks (`allowed` / `rejected`) |
-| `GatewAI_ratelimit_consumer_hits_total` | `service_type, user_type` | Consumers that hit their request-rate limit |
-| `GatewAI_ratelimit_errors_total` | `service_type` | Redis errors during request-rate check |
-| `GatewAI_token_ratelimit_checked_total` | `service_type, user_type, result` | Token-budget checks (`allowed` / `rejected`) |
-| `GatewAI_token_ratelimit_errors_total` | `service_type` | Redis errors during token-budget check |
+| `gatewai_ratelimit_requests_total` | `service_type, user_type, result` | Request-rate checks (`allowed` / `rejected`) |
+| `gatewai_ratelimit_consumer_hits_total` | `service_type, user_type, consumer` | Consumers that hit their request-rate limit |
+| `gatewai_ratelimit_errors_total` | `service_type` | Redis errors during request-rate check |
+| `gatewai_token_ratelimit_checked_total` | `service_type, user_type, result` | Token-budget checks (`allowed` / `rejected`) |
+| `gatewai_token_ratelimit_errors_total` | `service_type` | Redis errors during token-budget check |
 
 ### Example queries
 
 ```promql
 # Request rejection rate per service
-sum by (service_type) (rate(GatewAI_ratelimit_requests_total{result="rejected"}[5m]))
+sum by (service_type) (rate(gatewai_ratelimit_requests_total{result="rejected"}[5m]))
 /
-sum by (service_type) (rate(GatewAI_ratelimit_requests_total[5m]))
+sum by (service_type) (rate(gatewai_ratelimit_requests_total[5m]))
 
 # Token budget rejection rate per service
-sum by (service_type) (rate(GatewAI_token_ratelimit_checked_total{result="rejected"}[5m]))
+sum by (service_type) (rate(gatewai_token_ratelimit_checked_total{result="rejected"}[5m]))
 /
-sum by (service_type) (rate(GatewAI_token_ratelimit_checked_total[5m]))
+sum by (service_type) (rate(gatewai_token_ratelimit_checked_total[5m]))
 ```
 
 ## PrometheusRules

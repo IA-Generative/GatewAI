@@ -14,16 +14,16 @@ More than 5% (warning) or 20% (critical) of gateway requests return HTTP 5xx err
 
 ```bash
 # Error rate by mode and service_type
-rate(GatewAI_requests_total{status=~"5.."}[5m])
+rate(gatewai_requests_total{status=~"5.."}[5m])
 
 # Gateway pod logs
 kubectl logs -l app.kubernetes.io/name=gatewai-gateway -n <namespace> --tail=100
 
 # Status code breakdown
-sum by (status, mode, service_type) (rate(GatewAI_requests_total[5m]))
+sum by (status, mode, service_type) (rate(gatewai_requests_total[5m]))
 ```
 
-Common causes: S3 unavailable → check `GatewAI_s3_errors_total`. Redis unavailable → check `GatewAI_redis_errors_total`. Upstream inference service returning errors (sync mode).
+Common causes: S3 unavailable → check `gatewai_s3_errors_total`. Redis unavailable → check `gatewai_redis_errors_total`. Upstream inference service returning errors (sync mode).
 
 **Mitigation**
 
@@ -46,7 +46,7 @@ The gateway is failing to execute rate-limit checks against Redis. The rate limi
 
 ```promql
 # Error rate per service type
-rate(GatewAI_ratelimit_errors_total[5m])
+rate(gatewai_ratelimit_errors_total[5m])
 ```
 
 ```bash
@@ -79,11 +79,11 @@ More than 20% of rate-limit checks return `rejected` over the last 5 minutes.
 
 ```promql
 # Rejection rate per service type
-sum by (service_type) (rate(GatewAI_ratelimit_requests_total{result="rejected"}[5m]))
-/ sum by (service_type) (rate(GatewAI_ratelimit_requests_total[5m]))
+sum by (service_type) (rate(gatewai_ratelimit_requests_total{result="rejected"}[5m]))
+/ sum by (service_type) (rate(gatewai_ratelimit_requests_total[5m]))
 
 # Which user types are hitting limits?
-sum by (service_type, user_type) (rate(GatewAI_ratelimit_consumer_hits_total[5m]))
+sum by (service_type, user_type) (rate(gatewai_ratelimit_consumer_hits_total[5m]))
 ```
 
 Common causes: traffic spike from a legitimate consumer; limits configured too low; aggressive client retries; abuse.
@@ -112,7 +112,7 @@ The gateway encountered S3 errors (upload, get, or delete) in the last 5 minutes
 
 ```bash
 # Errors by operation
-sum by (operation) (increase(GatewAI_s3_errors_total[5m]))
+sum by (operation) (increase(gatewai_s3_errors_total[5m]))
 
 # Gateway logs
 kubectl logs -l app.kubernetes.io/name=gatewai-gateway -n <namespace> | grep -E "s3 (upload|result fetch) failed"
@@ -145,12 +145,12 @@ The 95th percentile inference duration exceeds the configured threshold (default
 ```promql
 # p95 inference duration by service_type
 histogram_quantile(0.95,
-  sum by (service_type, le) (rate(GatewAI_relay_inference_duration_seconds_bucket[10m]))
+  sum by (service_type, le) (rate(gatewai_relay_inference_duration_seconds_bucket[10m]))
 )
 
 # Input file size distribution
 histogram_quantile(0.95,
-  sum by (service_type, le) (rate(GatewAI_relay_input_size_bytes_bucket[10m]))
+  sum by (service_type, le) (rate(gatewai_relay_input_size_bytes_bucket[10m]))
 )
 ```
 
@@ -176,14 +176,14 @@ More than 10% (warning) or 30% (critical) of jobs processed by relay sidecars ar
 
 ```bash
 # Failure rate by service_type
-sum by (service_type) (rate(GatewAI_relay_jobs_total{status="failed"}[5m]))
-  / sum by (service_type) (rate(GatewAI_relay_jobs_total[5m]))
+sum by (service_type) (rate(gatewai_relay_jobs_total{status="failed"}[5m]))
+  / sum by (service_type) (rate(gatewai_relay_jobs_total[5m]))
 
 # Relay pod logs
 kubectl logs -l serving.kserve.io/inferenceservice=<name> -c kserve-container -n <namespace> --tail=100
 
 # S3 download errors
-increase(GatewAI_relay_s3_errors_total[5m])
+increase(gatewai_relay_s3_errors_total[5m])
 ```
 
 Common causes: inference model returning non-2xx; S3 download failure; inference timeout; GPU OOM causing pod restart.
@@ -210,13 +210,13 @@ Relay sidecars encountered S3 errors (get/put/delete) in the last 5 minutes.
 
 ```bash
 # Errors by operation
-sum by (operation) (increase(GatewAI_relay_s3_errors_total[5m]))
+sum by (operation) (increase(gatewai_relay_s3_errors_total[5m]))
 
 # Relay logs
 kubectl logs -l serving.kserve.io/inferenceservice=<name> -c kserve-container -n <namespace> | grep -E "s3|S3"
 
 # Check if gateway S3 errors also firing (shared credentials issue)
-increase(GatewAI_s3_errors_total[5m])
+increase(gatewai_s3_errors_total[5m])
 ```
 
 Common causes: S3 credentials not injected into relay pod; `ENCRYPTION_KEY` mismatch between gateway and relay; input file deleted before relay could download it; S3 endpoint unreachable from inference pod's network namespace.
@@ -227,6 +227,64 @@ Common causes: S3 credentials not injected into relay pod; `ENCRYPTION_KEY` mism
 2. Confirm `ENCRYPTION_KEY` is the same secret in both gateway and relay deployments
 3. Check network policies — inference pods must reach the S3 endpoint
 4. If input files disappear prematurely: check `redis.pending_max_age` and `lifecycle.job_ttl.pending` vs inference duration
+
+## RelayJobsPendingTooLong
+
+**Severity:** warning — **Component:** Relay
+
+The pending queue for a model has stayed non-empty with **zero** completed/failed jobs for the window (`alerting.prometheusRule.thresholds.jobsPendingFor`, default 15m) — the relay is likely down or not consuming at all.
+
+**Impact:** submitted jobs for that model never start; clients see them stuck in `pending` until they expire.
+
+**Diagnosis**
+
+```bash
+# Pending depth per model
+sum by (model) (gatewai_relay_queue_depth{state="pending"})
+
+# Is anything completing at all?
+sum by (model) (increase(gatewai_jobs_total[15m]))
+
+# Is a relay pod running for this model? (KEDA scales from zero on queue depth)
+kubectl get pods -n <namespace> | grep <model>
+```
+
+This alert deliberately does **not** fire for a relay that is merely overloaded but still draining (nonzero completion rate). Common causes: KEDA not scaling up (check the trigger + Redis auth), the inference pod not ready, or the relay image failing to pull/start.
+
+**Mitigation**
+
+1. Confirm a relay pod exists and is `Running`; check its logs for startup / inference-readiness errors.
+2. Verify the KEDA trigger points at `relay:<model>:pending` and can reach Redis.
+3. If a relay is up but idle, confirm it popped the job (`relay:<model>:processing`) and holds the lease.
+
+## RelayJobsRunningTooLong
+
+**Severity:** warning — **Component:** Relay
+
+The processing queue for a model has stayed non-empty with **zero** completed/failed jobs for the window (`jobsRunningFor`, default 1h) — a job is likely stuck or the relay crashed mid-job.
+
+**Impact:** a job never completes; its long-poll / webhook never fires.
+
+**Diagnosis**
+
+```bash
+# Processing depth per model
+sum by (model) (gatewai_relay_queue_depth{state="processing"})
+
+# Inspect the stuck entries (the metric has no job_id label)
+redis-cli LRANGE relay:<model>:processing 0 -1
+
+# Relay logs for the stuck job
+kubectl logs <relay-pod> -n <namespace>
+```
+
+Common causes: inference hanging with no timeout; a relay crash where the lease reaper has not yet requeued the job; or a job that repeatedly dead-letters.
+
+**Mitigation**
+
+1. Confirm the gateway GC reaper is enabled (`lifecycle.gc.enabled`) — it requeues abandoned `processing` entries once the `lease_ttl` lease expires, and dead-letters after `max_reap_attempts`.
+2. Inspect the stuck entry and relay logs to identify the job.
+3. Ensure the inference backend has a sane per-request timeout.
 
 ## Dead-letter queues
 

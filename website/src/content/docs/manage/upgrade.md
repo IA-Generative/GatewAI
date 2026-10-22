@@ -6,7 +6,7 @@ title: Upgrade guide
 
 ## Breaking changes
 
-Check this table before upgrading across multiple versions — each release's own breaking changes (if any) are also documented in [CHANGELOG.md](https://github.com/Qatr-io/GatewAI/blob/main/CHANGELOG.md).
+Check this table before upgrading across multiple versions — each release's own breaking changes (if any) are also documented in [CHANGELOG.md](https://github.com/IA-Generative/GatewAI/blob/main/CHANGELOG.md).
 
 ### Already released
 
@@ -18,7 +18,7 @@ Check this table before upgrading across multiple versions — each release's ow
 | Gateway | v0.15.0 | Go module and Helm chart renamed: `kevent/gateway` → `gatewai/gateway`, `kevent-gateway` → `gatewai-gateway`. |
 | Gateway | v0.14.0 | Kafka removed entirely — jobs are pushed directly to the relay's Redis queue. `sync_topic` and the `syncPriority` mechanism were removed the same week (v0.13.0). |
 | Gateway | v0.11.0 | `redis.pending_max_age_hours` (int, hours) renamed to `redis.pending_max_age` (duration string, e.g. `"2h"`); `lifecycle.job_ttl.success` renamed to `lifecycle.job_ttl.completed`. |
-| Gateway | v0.8.0 | `GatewAI_llm_*` metrics gained a `backend_model` label — update PromQL `by`/`without` clauses and dashboards. |
+| Gateway | v0.8.0 | `gatewai_llm_*` metrics gained a `backend_model` label — update PromQL `by`/`without` clauses and dashboards. |
 | Gateway | v0.7.0 | `api_key` removed from the service config — use `inference_headers` (`Authorization: Bearer …`) instead. |
 | Relay | v0.7.0 | Go module renamed: `kevent/relay` → `gatewai/relay`. |
 | Relay | v0.6.1 | `PodAnnotator` / pod-deletion-cost mechanism removed — no longer needed since the relay exits after one job. |
@@ -35,7 +35,7 @@ Check this table before upgrading across multiple versions — each release's ow
 helm repo update
 
 # 2. Review breaking changes
-# — the table above, and https://github.com/Qatr-io/GatewAI/blob/main/CHANGELOG.md
+# — the table above, and https://github.com/IA-Generative/GatewAI/blob/main/CHANGELOG.md
 
 # 3. Upgrade
 helm upgrade gatewai-gateway GatewAI/gatewai-gateway -f values.yaml
@@ -53,7 +53,7 @@ The relay image tag is set directly on the inference Deployment, not managed by 
 # Update the relay container image tag in your Deployment manifest
 # then apply:
 kubectl set image deployment/whisper-large-v3 \
-  relay=ghcr.io/qatr-io/gatewai/relay:<new-tag>
+  relay=ghcr.io/ia-generative/gatewai/relay:<new-tag>
 
 kubectl rollout status deployment/whisper-large-v3
 ```

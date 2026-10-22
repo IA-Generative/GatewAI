@@ -12,7 +12,7 @@ GatewAI ships built-in OpenTelemetry instrumentation for distributed tracing, OT
 Gateway                        Relay
   │                              │
   ├─ Traces (OTLP/HTTP)          ├─ Traces (OTLP/HTTP)
-  ├─ Metrics (OTLP push)         ├─ Metrics (OTLP push, useful for k8s Jobs)
+  ├─ Metrics (OTLP push)         ├─ Metrics (OTLP push, useful for short-lived relay pods)
   └─ Logs (slog bridge)          └─ Logs (slog bridge)
          │                              │
          └──────────────────────────────┘
@@ -23,7 +23,7 @@ Gateway                        Relay
           Tempo      Prometheus  Loki
 ```
 
-The relay is a one-shot Kubernetes Job (one pod = one inference job). It cannot be Prometheus-scraped, making **OTLP metrics push** particularly valuable for relay-side observability.
+The relay runs as a short-lived pod (KEDA scale-to-zero — a pod spins up to drain the queue and exits). It can't be reliably Prometheus-scraped, making **OTLP metrics push** particularly valuable for relay-side observability.
 
 ### Trace propagation across processes
 
@@ -86,7 +86,7 @@ opentelemetry:
       - /openapi.yaml
 
   # OTLP metrics push — additive to Prometheus scraping.
-  # Required for the relay (k8s Job pods cannot be scraped).
+  # Required for the relay (short-lived pods can't be reliably scraped).
   metrics:
     enabled: false
     endpoint: ""            # override exporter.endpoint for metrics only (optional)
@@ -300,7 +300,7 @@ Once configured, exemplar dots appear on latency panels. Clicking a dot opens th
 
 ### Grafana dashboards
 
-Four dashboards are available in [`dashboards/`](https://github.com/Qatr-io/GatewAI/tree/main/dashboards/):
+Four dashboards are available in [`dashboards/`](https://github.com/IA-Generative/GatewAI/tree/main/dashboards/):
 
 | Dashboard | UID | Datasource |
 |-----------|-----|------------|
@@ -340,7 +340,7 @@ overrides:
 
 ## Relay: one-shot jobs and OTLP push
 
-The relay runs as a Kubernetes Job — one pod processes one inference job and exits. Prometheus cannot scrape it reliably. OTLP metrics push ensures relay metrics reach your observability backend even when the pod terminates before a scrape window.
+The relay runs as a short-lived pod (KEDA scale-to-zero) — a pod drains the queue and exits. Prometheus cannot scrape it reliably. OTLP metrics push ensures relay metrics reach your observability backend even when the pod terminates before a scrape window.
 
 Enable in `relay/config.yaml`:
 

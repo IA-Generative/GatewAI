@@ -31,13 +31,13 @@ helm upgrade --install gatewai-gateway ./helm/gateway -f values.yaml
 
 ```yaml
 image:
-  tag: "v0.14.0"
+  tag: "v0.25.0"
 
 config:
   s3:
     endpoint: "https://s3.fr-par.scw.cloud"
     region: "fr-par"
-    bucket: "my-GatewAI-jobs"
+    bucket: "my-gatewai-jobs"
   redis:
     addr: "redis:6379"
 
@@ -126,7 +126,7 @@ config:
           - "/v1/chat/completions"
 ```
 
-`backendPool` is mutually exclusive with `backends`/`inferenceURL` on the same service. See [Service registry](../configure/service-registry.md#backend-pools-backend_pools) for the full field reference and the [Helm chart README](https://github.com/Qatr-io/GatewAI/blob/main/helm/gateway/README.md) for the complete `values.yaml` schema.
+`backendPool` is mutually exclusive with `backends`/`inferenceURL` on the same service. See [Service registry](../configure/service-registry.md#backend-pools-backend_pools) for the full field reference and the [Helm chart README](https://github.com/IA-Generative/GatewAI/blob/main/helm/gateway/README.md) for the complete `values.yaml` schema.
 
 ## ConfigMap hot reload
 
@@ -144,10 +144,10 @@ configReloader:
 ingress:
   enabled: true
   className: nginx
-  host: GatewAI.example.com
+  host: gatewai.example.com
   tls:
     enabled: true
-    secretName: GatewAI-tls
+    secretName: gatewai-tls
 ```
 
 ## Extra environment variables
@@ -157,7 +157,7 @@ extraEnvVars:
   - name: ENCRYPTION_KEY
     valueFrom:
       secretKeyRef:
-        name: GatewAI-encryption
+        name: gatewai-encryption
         key: key
 ```
 
@@ -165,7 +165,7 @@ extraEnvVars:
 
 The relay runs as a standalone Deployment alongside the inference container. Each pod processes one job and exits — KEDA creates a new pod when the Redis queue is non-empty.
 
-Example manifests for a Whisper transcription service are in [`examples/relay-transcription/`](https://github.com/Qatr-io/GatewAI/tree/main/examples/relay-transcription/). Copy and adapt them to your cluster, then apply:
+Example manifests for a Whisper transcription service are in [`examples/relay-transcription/`](https://github.com/IA-Generative/GatewAI/tree/main/examples/relay-transcription/). Copy and adapt them to your cluster, then apply:
 
 ```bash
 # ConfigMap (relay config.yaml)

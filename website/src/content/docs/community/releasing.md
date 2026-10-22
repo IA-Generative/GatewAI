@@ -10,7 +10,7 @@ title: Releasing
 - [ ] `CHANGELOG.md` updated with the new version
 - [ ] Helm `helm/gateway/Chart.yaml` version bumped (if chart changed)
 - [ ] Helm `helm/gateway/values.yaml` `image.tag` updated
-- [ ] `examples/inference-service.yaml` relay image tag updated (if relay changed)
+- [ ] `k8s/deployment-transcription.yaml` relay image tag updated (if relay changed)
 
 ## Tag and release
 
@@ -30,7 +30,7 @@ git push origin relay/vX.Y.Z
 CI will automatically:
 
 1. Build multi-arch Docker images
-2. Push to `ghcr.io/qatr-io/gatewai/gateway:vX.Y.Z`
+2. Push to `ghcr.io/ia-generative/gatewai/gateway:vX.Y.Z`
 3. Create a GitHub Release with binaries
 
 ## Back-merge to develop
@@ -39,7 +39,7 @@ After the release tag is pushed:
 
 ```bash
 git checkout develop && git pull
-git merge main
+git merge --no-ff main
 git push origin develop
 ```
 
@@ -47,10 +47,10 @@ git push origin develop
 
 | Component | Registry |
 |---|---|
-| Gateway | `ghcr.io/qatr-io/gatewai/gateway:vX.Y.Z` |
-| Relay | `ghcr.io/qatr-io/gatewai/relay:vX.Y.Z` |
-| Dev (gateway) | `ghcr.io/qatr-io/gatewai/gateway:dev` |
-| Dev (relay) | `ghcr.io/qatr-io/gatewai/relay:dev` |
+| Gateway | `ghcr.io/ia-generative/gatewai/gateway:vX.Y.Z` |
+| Relay | `ghcr.io/ia-generative/gatewai/relay:vX.Y.Z` |
+| Dev (gateway) | `ghcr.io/ia-generative/gatewai/gateway:dev` |
+| Dev (relay) | `ghcr.io/ia-generative/gatewai/relay:dev` |
 
 ## Helm chart
 

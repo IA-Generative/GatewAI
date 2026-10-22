@@ -10,16 +10,15 @@ W3C TraceContext propagation is enabled globally. Incoming HTTP requests extract
 
 ## Gateway spans
 
-### `gateway.http.server` — HTTP server (middleware)
+### HTTP server span — `<METHOD> <route>` (middleware)
 
-Created for every incoming HTTP request by `OtelMiddleware`.
+Created for every incoming HTTP request by `OtelMiddleware`. The span starts named after the HTTP method and, once chi resolves the route, is renamed to `<METHOD> <route>` (e.g. `POST /jobs/{service_type}`) — there is no fixed `gateway.http.server` name.
 
 | Attribute | Type | Value |
 |-----------|------|-------|
 | `http.method` | string | `GET`, `POST`, … |
 | `http.route` | string | chi route pattern, e.g. `/jobs/{service_type}` |
 | `http.status_code` | int | response status |
-| `net.host.name` | string | `Host` header value |
 
 Span kind: **Server**. Status set to `Error` when `http.status_code >= 500`.
 
@@ -157,7 +156,7 @@ Client request
   │
   │ HTTP (traceparent header optional — extracted by OtelMiddleware)
   ▼
-[gateway.http.server]              ← SpanKind: Server
+[POST /jobs/{service_type}]        ← SpanKind: Server (named <METHOD> <route>)
   └─ [gateway.job.submit]          ← job.trace_context = traceparent stored in Redis
        ├─ [gateway.s3.upload]
        └─ [gateway.redis.enqueue]
@@ -179,7 +178,7 @@ Client request
 
 ## TraceQL queries
 
-Common queries for the [GatewAI — Traces](/observe/opentelemetry#grafana-dashboards) dashboard or Grafana Explore.
+Common queries for the [GatewAI — Traces](../observe/opentelemetry#grafana-dashboards) dashboard or Grafana Explore.
 
 ```
 # All GatewAI spans in the last hour

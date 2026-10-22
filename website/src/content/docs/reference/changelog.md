@@ -18,5 +18,6 @@ Versioning: each component is versioned independently — see tag conventions be
 
 ---
 
-!!! note
-    For the full changelog, see [CHANGELOG.md](https://github.com/Qatr-io/GatewAI/blob/main/CHANGELOG.md) on GitHub.
+:::note
+For the full changelog, see [CHANGELOG.md](https://github.com/IA-Generative/GatewAI/blob/main/CHANGELOG.md) on GitHub.
+:::

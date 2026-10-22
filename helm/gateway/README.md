@@ -50,7 +50,7 @@ Gateway (:8080)
 
 | Parameter | Description | Default |
 |---|---|---|
-| `image.repository` | Gateway image | `ghcr.io/qatr-io/gatewai/gateway` |
+| `image.repository` | Gateway image | `ghcr.io/ia-generative/gatewai/gateway` |
 | `image.tag` | Image tag | `v0.20.0` |
 | `image.pullPolicy` | Pull policy | `IfNotPresent` |
 
@@ -514,42 +514,37 @@ metrics:
 
 | Metric | Type | Labels |
 |---|---|---|
-| `GatewAI_requests_total` | counter | `mode`, `service_type`, `model`, `status` |
-| `GatewAI_request_duration_seconds` | histogram | `mode`, `service_type`, `model` |
-| `GatewAI_sync_wait_duration_seconds` | histogram | `service_type`, `model` |
-| `GatewAI_sync_jobs_in_flight` | gauge | — |
-| `GatewAI_s3_operation_duration_seconds` | histogram | `operation` |
-| `GatewAI_s3_errors_total` | counter | `operation` |
-| `GatewAI_redis_operation_duration_seconds` | histogram | `operation` |
-| `GatewAI_redis_errors_total` | counter | `operation` |
-| `GatewAI_jobs_by_consumer_total` | counter | `mode`, `service_type`, `model`, `consumer` |
-| `GatewAI_llm_requests_total` | counter | `service_type`, `model`, `backend_model`, `provider`, `user_type`, `status` |
-| `GatewAI_llm_request_duration_seconds` | histogram | `service_type`, `model`, `backend_model`, `provider`, `user_type` |
-| `GatewAI_llm_tokens_total` | counter | `service_type`, `model`, `backend_model`, `user_type`, `type` |
-| `GatewAI_llm_tokens_per_request` | histogram | `service_type`, `model`, `backend_model`, `user_type` |
-| `GatewAI_llm_consumer_tokens_top` | gauge | `consumer`, `user_type`, `type` |
-| `GatewAI_cache_hits_total` | counter | `service_type`, `model` |
-| `GatewAI_cache_misses_total` | counter | `service_type`, `model` |
-| `GatewAI_cache_errors_total` | counter | `service_type`, `model`, `operation` |
-| `GatewAI_ratelimit_requests_total` | counter | `service_type`, `user_type`, `result` |
-| `GatewAI_ratelimit_consumer_hits_total` | counter | `service_type`, `user_type`, `consumer` |
-| `GatewAI_ratelimit_errors_total` | counter | `service_type` |
+| `gatewai_requests_total` | counter | `mode`, `service_type`, `model`, `status` |
+| `gatewai_request_duration_seconds` | histogram | `mode`, `service_type`, `model` |
+| `gatewai_s3_operation_duration_seconds` | histogram | `operation` |
+| `gatewai_s3_errors_total` | counter | `operation` |
+| `gatewai_redis_operation_duration_seconds` | histogram | `operation` |
+| `gatewai_redis_errors_total` | counter | `operation` |
+| `gatewai_jobs_by_consumer_total` | counter | `mode`, `service_type`, `model`, `consumer` |
+| `gatewai_llm_requests_total` | counter | `service_type`, `model`, `backend_model`, `provider`, `user_type`, `status` |
+| `gatewai_llm_request_duration_seconds` | histogram | `service_type`, `model`, `backend_model`, `provider`, `user_type` |
+| `gatewai_llm_tokens_total` | counter | `service_type`, `model`, `backend_model`, `user_type`, `type` |
+| `gatewai_llm_tokens_per_request` | histogram | `service_type`, `model`, `backend_model`, `user_type` |
+| `gatewai_llm_consumer_tokens_top` | gauge | `consumer`, `user_type`, `type` |
+| `gatewai_cache_hits_total` | counter | `service_type`, `model` |
+| `gatewai_cache_misses_total` | counter | `service_type`, `model` |
+| `gatewai_cache_errors_total` | counter | `service_type`, `model`, `operation` |
+| `gatewai_ratelimit_requests_total` | counter | `service_type`, `user_type`, `result` |
+| `gatewai_ratelimit_consumer_hits_total` | counter | `service_type`, `user_type`, `consumer` |
+| `gatewai_ratelimit_errors_total` | counter | `service_type` |
 
-### Relay sidecar metrics
+### Relay metrics
 
-The relay sidecar exposes its own `/metrics` endpoint (scraped separately, e.g. via a PodMonitor on port 8080 of the InferenceService pod).
+The relay runs as a container co-located with the inference container in the same pod. It does not expose a `/metrics` endpoint (only `/health` on port 8080); its metrics are shipped via OTLP push (see [OpenTelemetry](https://ia-generative.github.io/GatewAI/observe/opentelemetry)).
 
 | Metric | Type | Labels |
 |---|---|---|
-| `GatewAI_relay_jobs_total` | counter | `service_type`, `status` |
-| `GatewAI_relay_inference_duration_seconds` | histogram | `service_type`, `model` |
-| `GatewAI_relay_input_size_bytes` | histogram | `service_type` |
-| `GatewAI_relay_sync_priority` | gauge | — |
-| `GatewAI_relay_deferred_total` | counter | — |
-| `GatewAI_relay_s3_operation_duration_seconds` | histogram | `operation` |
-| `GatewAI_relay_s3_errors_total` | counter | `operation` |
-| `GatewAI_relay_proxy_requests_total` | counter | `service_type`, `status` |
-| `GatewAI_relay_proxy_duration_seconds` | histogram | `service_type` |
+| `gatewai_relay_jobs_total` | counter | `service_type`, `status` |
+| `gatewai_relay_inference_duration_seconds` | histogram | `service_type`, `model` |
+| `gatewai_relay_input_size_bytes` | histogram | `service_type` |
+| `gatewai_relay_s3_operation_duration_seconds` | histogram | `operation` |
+| `gatewai_relay_s3_errors_total` | counter | `operation` |
+| `gatewai_relay_gateway_callback_errors_total` | counter | — |
 
 ## Upgrade guide
 
@@ -558,7 +553,7 @@ The relay sidecar exposes its own `/metrics` endpoint (scraped separately, e.g. 
 helm repo update
 
 # 2. Review breaking changes — table below, and the version-specific notes further down
-#    https://github.com/Qatr-io/GatewAI/blob/main/CHANGELOG.md
+#    https://github.com/IA-Generative/GatewAI/blob/main/CHANGELOG.md
 
 # 3. Upgrade
 helm upgrade gatewai-gateway GatewAI/gatewai-gateway -f values.yaml
@@ -622,7 +617,7 @@ helm rollback gatewai-gateway
 
 ### 0.7.0 → 0.8.0
 
-**Breaking change:** LLM metrics now include a `backend_model` label. Existing PromQL queries and dashboard panels targeting `GatewAI_llm_requests_total`, `GatewAI_llm_request_duration_seconds`, `GatewAI_llm_tokens_total`, or `GatewAI_llm_tokens_per_request` must be updated to include `backend_model` in `by`/`without` clauses, or use `{backend_model=~".*"}` as a wildcard.
+**Breaking change:** LLM metrics now include a `backend_model` label. Existing PromQL queries and dashboard panels targeting `gatewai_llm_requests_total`, `gatewai_llm_request_duration_seconds`, `gatewai_llm_tokens_total`, or `gatewai_llm_tokens_per_request` must be updated to include `backend_model` in `by`/`without` clauses, or use `{backend_model=~".*"}` as a wildcard.
 
 - **Multi-backend routing** — `backends[]` list per service with weighted-random primary selection, automatic fallback on 5xx/network error, and `weight: 0` for last-resort backends
 - **Per-backend `model` override** — `backends[].model` overrides `backendModel` for a specific backend; enables canary deployments with different model versions
@@ -690,7 +685,7 @@ No breaking changes for the chart itself. Requires the relay to be redeployed wi
 No breaking changes.
 
 **New optional parameters:**
-- `alerting.prometheusRule.thresholds.jobsPendingFor` (default `15m`) / `.jobsRunningFor` (default `1h`) — two new `PrometheusRule` alerts, `RelayJobsPendingTooLong` and `RelayJobsRunningTooLong`, based on `gatewai_relay_queue_depth{state}` and `gatewai_jobs_total`. See `values.yaml` (`alerting.prometheusRule.thresholds`) and the [alerting docs](https://qatr-io.github.io/GatewAI/observe/prometheus/#alerts) for the full alert list.
+- `alerting.prometheusRule.thresholds.jobsPendingFor` (default `15m`) / `.jobsRunningFor` (default `1h`) — two new `PrometheusRule` alerts, `RelayJobsPendingTooLong` and `RelayJobsRunningTooLong`, based on `gatewai_relay_queue_depth{state}` and `gatewai_jobs_total`. See `values.yaml` (`alerting.prometheusRule.thresholds`) and the [alerting docs](https://ia-generative.github.io/GatewAI/observe/prometheus/#alerts) for the full alert list.
 
 All shipped alerts also lost their legacy `Kevent` name prefix (e.g. `KeventGatewayHighErrorRate` → `GatewayHighErrorRate`) — update any existing Alertmanager routes/silences matching on the old alert names.
 

@@ -1,5 +1,5 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 # distroless/static includes CA certificates (needed for HTTPS MinIO/S3 + webhooks)
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
+
+# Links the ghcr package to the repo (source tab, inherited perms).
+LABEL org.opencontainers.image.source="https://github.com/IA-Generative/GatewAI"
 
 WORKDIR /app
 

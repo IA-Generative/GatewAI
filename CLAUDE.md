@@ -67,8 +67,8 @@ git push origin develop
 ```
 
 Images:
-- Gateway:    `ghcr.io/qatr-io/gatewai/gateway:vX.Y.Z`
-- Relay: `ghcr.io/qatr-io/gatewai/relay:vX.Y.Z`
+- Gateway:    `ghcr.io/ia-generative/gatewai/gateway:vX.Y.Z`
+- Relay: `ghcr.io/ia-generative/gatewai/relay:vX.Y.Z`
 
 Current tags: gateway `v0.21.0`, relay `v0.12.0`.
 
@@ -83,7 +83,7 @@ Client
   ▼
 Gateway (:8080)
   ├── Upload file → S3
-  ├── Save job record → Redis (TTL 72h)
+  ├── Save job record → Redis (TTL per `lifecycle.job_ttl`; 2h safety-net default)
   └── RPUSH job → Redis queue relay:<model>:pending
                                     │
                         Relay Deployment (pull consumer)
@@ -312,11 +312,11 @@ A rule may also carry an optional **`limits`** block (a `RateLimitConfig`: `rate
 
 Helm chart deploys the gateway with Redis-HA (HAProxy front-end). The relay runs as a standalone Deployment alongside the inference pod (see `k8s/deployment-transcription.yaml`), not managed by Helm.
 
-The Helm chart is published to GitHub Pages at `https://qatr-io.github.io/GatewAI` (auto-updated on push to `main` when `helm/` changes). The `gh-pages` branch must exist in the repository.
+The Helm chart is published to GitHub Pages at `https://ia-generative.github.io/GatewAI` (auto-updated on push to `main` when `helm/` changes). The `gh-pages` branch must exist in the repository.
 
 ```bash
 # Add Helm repo
-helm repo add gatewai https://qatr-io.github.io/GatewAI
+helm repo add gatewai https://ia-generative.github.io/GatewAI
 helm repo update
 helm install gatewai-gateway gatewai/gatewai-gateway -f values.yaml
 

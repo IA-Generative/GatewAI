@@ -4,7 +4,7 @@ title: Async flow
 
 # Relay — async flow
 
-The relay is a sidecar container that runs alongside the inference pod. It pulls jobs from a Redis queue, calls the local inference model, and publishes results back to the gateway.
+The relay is a container co-located with the inference container in the same pod. It pulls jobs from a Redis queue, calls the local inference model on `127.0.0.1`, writes the result back to Redis/S3, and calls the gateway's completion callback.
 
 ## Architecture
 
@@ -16,7 +16,7 @@ Gateway
                               │
                     ┌─────────▼──────────┐
                     │       Relay        │
-                    │  (sidecar pod)     │
+                    │   (same pod)       │
                     └─────────┬──────────┘
                               │ BLMOVE LEFT RIGHT
                     relay:<model>:pending
@@ -24,12 +24,13 @@ Gateway
                               │
                     1. Download + decrypt input from S3
                     2. POST to inference (127.0.0.1:9000/...)
-                    3. Upload result → S3
-                    4. PUBLISH → jobs:<model>:completed
-                    5. Remove from relay:<model>:processing
+                    3. Upload result → S3 + write result → Redis (completed)
+                    4. PUBLISH → jobs:<model>:completed  (wakes subscribers)
+                    5. Done: remove from relay:<model>:processing + delete lease
+                    6. POST <gateway>/-/relay/jobs/{id}/complete
                               │
-                    Gateway subscriber
-                    ├── Update job status → Redis (completed)
+                    Gateway completion callback (once per job)
+                    ├── Usage tracking + rate-limit debit
                     ├── Trigger webhook (if callback_url set)
                     └── Notify pub/sub (job:<id>:done)
 ```
@@ -46,7 +47,7 @@ The relay polls `GET /health` on the local inference service (port 9000) until i
 BLMOVE relay:<model>:pending relay:<model>:processing LEFT RIGHT [timeout]
 ```
 
-Blocks until a job arrives or the `queue_pop_timeout` expires (default: 5 min). On timeout, the relay exits `0` — KEDA will not restart it while the queue remains empty.
+Blocks until a job arrives or the `queue_pop_timeout` expires (default: 30s). On timeout, the relay exits `0` — KEDA will not restart it while the queue remains empty.
 
 On a successful dequeue the relay acquires a **processing lease** — `SET relay:<model>:lease:<id>` with TTL `lease_ttl` (config, default `60s`) — and refreshes it every `lease_ttl/3` for the whole job. If this pod dies mid-job the lease expires, and the gateway reaper requeues the job (see [Crash recovery](../set-up/queue#crash-recovery)). `lease_ttl` need not be sized to the job length — the heartbeat keeps it alive for arbitrarily long jobs; it only bounds how quickly a *dead* pod's job is detected.
 
@@ -60,11 +61,12 @@ On a successful dequeue the relay acquires a **processing lease** — `SET relay
 
 ### 4. Complete
 
-```
-PUBLISH jobs:<model>:completed  {"job_id": "...", "status": "completed", ...}
-```
+For every finished job the relay, in order:
 
-The gateway subscriber receives this, updates the job record in Redis, and triggers the callback webhook if configured.
+1. Writes the result to the Redis job record (status `completed`).
+2. `PUBLISH jobs:<model>:completed` — wakes long-poll subscribers.
+3. **Done** — removes the job from `relay:<model>:processing` and deletes the lease.
+4. `POST <gateway>/-/relay/jobs/{id}/complete` — one bounded HTTP call so the gateway does usage tracking, the rate-limit debit, and **webhook delivery exactly once per job** (the gateway sits behind a k8s Service, so the callback is safe against replicas). Callback failures are logged and never fail the job — the result in Redis is already persisted.
 
 ### 5. Exit
 
