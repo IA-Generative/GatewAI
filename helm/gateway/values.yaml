@@ -487,8 +487,6 @@ alerting:
       # Taux d'erreur gateway (0.05 = 5%)
       gatewayErrorRateWarning: 0.05
       gatewayErrorRateCritical: 0.20
-      # Nombre de jobs sync en vol simultanés avant alerte
-      syncJobsInFlight: 20
       # Taux d'échec relay (0.10 = 10%)
       relayJobFailureRateWarning: 0.10
       relayJobFailureRateCritical: 0.30

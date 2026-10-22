@@ -47,7 +47,6 @@ alerting:
     thresholds:
       gatewayErrorRateWarning: 0.05    # 5%
       gatewayErrorRateCritical: 0.20   # 20%
-      syncJobsInFlight: 20
       relayJobFailureRateWarning: 0.10  # 10%
       relayJobFailureRateCritical: 0.30 # 30%
       relayInferenceP95Seconds: 120
@@ -104,7 +103,6 @@ All alerts are defined in `helm/gateway/templates/prometheusrule.yaml`. Threshol
 | `GatewayHighErrorRate` | warning | > X% of requests return 5xx over 5 min | `gatewayErrorRateWarning` |
 | `GatewayHighErrorRate` | critical | > X% of requests return 5xx over 5 min | `gatewayErrorRateCritical` |
 | `GatewayS3Errors` | warning | Any S3 errors in the last 5 min | — |
-| `GatewaySyncJobsInFlightHigh` | warning | Sync connections above threshold for 5 min | `syncJobsInFlight` |
 | `GatewayRateLimitHighRejectionRate` | warning | > X% of requests rate-limited per service type | `rateLimitRejectionRateWarning` |
 | `GatewayRateLimitErrors` | warning | Redis errors in rate limiter (fail-open) | — |
 
