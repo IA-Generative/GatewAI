@@ -42,7 +42,7 @@ triggers:
 
 Each relay pod:
 1. Polls `/health` on the local inference service until ready
-2. Calls `BLMOVE relay:<model>:pending relay:<model>:processing LEFT RIGHT` with a configurable timeout (`queue_pop_timeout`, default 5 min), then acquires a processing **lease** (`relay:<model>:lease:<id>`, TTL `lease_ttl`, default 60s)
+2. Calls `BLMOVE relay:<model>:pending relay:<model>:processing LEFT RIGHT` with a configurable timeout (`queue_pop_timeout`, default 30s), then acquires a processing **lease** (`relay:<model>:lease:<id>`, TTL `lease_ttl`, default 60s)
 3. Exits `0` on timeout (empty queue) or SIGTERM — KEDA will not restart a zero-queue pod
 4. Processes the job (download S3 → inference → upload S3 → publish completion), refreshing the lease every `lease_ttl/3` throughout
 5. Exits `0` — KEDA creates a fresh pod for the next job; `Done` removes the processing entry **and** the lease

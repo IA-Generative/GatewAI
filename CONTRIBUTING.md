@@ -79,4 +79,4 @@ git checkout -b release/gateway-v0.7.0 develop
 /release gateway
 ```
 
-Voir aussi [`docs/runbooks/`](docs/runbooks/) pour les procédures opérationnelles.
+Voir aussi les [runbooks opérationnels](https://ia-generative.github.io/GatewAI/manage/runbooks) pour les procédures opérationnelles.

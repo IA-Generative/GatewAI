@@ -4,7 +4,7 @@ title: API reference
 
 # API reference
 
-All endpoints are served by the gateway on `:8080` by default. No authentication is enforced at the gateway level — secure via your API gateway (APISIX, ingress, etc.).
+All endpoints are served by the gateway on `:8080` by default. By default no authentication is enforced at the gateway level — secure via your API gateway (APISIX, ingress, etc.). Optional gateway-side auth is available via `auth.mode` (`oauth2` | `proxy`) — see [Authentication](../configure/authentication).
 
 ## Async jobs
 

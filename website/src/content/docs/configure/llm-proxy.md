@@ -166,7 +166,7 @@ Member: consumer name
 Score: cumulative token count
 ```
 
-A background goroutine refreshes the Prometheus `GatewAI_llm_consumer_tokens_top` gauge every 60 seconds (and immediately at startup), exposing the top-N consumers by token usage. This avoids unbounded label cardinality — only the top-N appear in Prometheus, not all 100k+ consumers.
+A background goroutine refreshes the Prometheus `gatewai_llm_consumer_tokens_top` gauge every 60 seconds (and immediately at startup), exposing the top-N consumers by token usage. This avoids unbounded label cardinality — only the top-N appear in Prometheus, not all 100k+ consumers.
 
 For monitoring all consumers independently, query Redis directly:
 
@@ -178,28 +178,28 @@ redis-cli ZREVRANGEBYSCORE llm:consumer:tokens:sa:prompt +inf -inf WITHSCORES
 
 | Metric | Labels | Description |
 |---|---|---|
-| `GatewAI_llm_requests_total` | `service_type, model, backend_model, provider, user_type, status` | Request count |
-| `GatewAI_llm_request_duration_seconds` | `service_type, model, backend_model, provider, user_type` | Latency histogram |
-| `GatewAI_llm_tokens_total` | `service_type, model, backend_model, user_type, type` | Token counter (`prompt` / `completion`) |
-| `GatewAI_llm_tokens_per_request` | `service_type, model, backend_model, user_type` | Token distribution histogram |
-| `GatewAI_llm_consumer_tokens_top` | `consumer, user_type, type` | Top-N consumer token gauge |
-| `GatewAI_cache_hits_total` | `service_type, model` | Cache hit counter |
-| `GatewAI_cache_misses_total` | `service_type, model` | Cache miss counter |
-| `GatewAI_cache_errors_total` | `service_type, model, op` | Cache error counter (`key`/`get`/`set`) |
+| `gatewai_llm_requests_total` | `service_type, model, backend_model, provider, user_type, status, stream` | Request count |
+| `gatewai_llm_request_duration_seconds` | `service_type, model, backend_model, provider, user_type, stream` | Latency histogram |
+| `gatewai_llm_tokens_total` | `service_type, model, backend_model, user_type, type` | Token counter (`prompt` / `completion`) |
+| `gatewai_llm_tokens_per_request` | `service_type, model, backend_model, user_type` | Token distribution histogram |
+| `gatewai_llm_consumer_tokens_top` | `consumer, user_type, type` | Top-N consumer token gauge |
+| `gatewai_cache_hits_total` | `service_type, model` | Cache hit counter |
+| `gatewai_cache_misses_total` | `service_type, model` | Cache miss counter |
+| `gatewai_cache_errors_total` | `service_type, model, operation` | Cache error counter (`key`/`get`/`set`) |
 
 ### Example queries
 
 ```promql
 # Cache hit ratio per model
-sum by (model) (rate(GatewAI_cache_hits_total[5m]))
+sum by (model) (rate(gatewai_cache_hits_total[5m]))
 /
-sum by (model) (rate(GatewAI_llm_requests_total[5m]))
+sum by (model) (rate(gatewai_llm_requests_total[5m]))
 
 # p99 token count per request
 histogram_quantile(0.99, sum by (le, model) (
-  rate(GatewAI_llm_tokens_per_request_bucket[1h])
+  rate(gatewai_llm_tokens_per_request_bucket[1h])
 ))
 
 # Top consumers by prompt tokens (from the top-N gauge)
-topk(10, GatewAI_llm_consumer_tokens_top{type="prompt"})
+topk(10, gatewai_llm_consumer_tokens_top{type="prompt"})
 ```

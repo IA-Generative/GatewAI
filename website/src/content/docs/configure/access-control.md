@@ -6,7 +6,7 @@ title: Access control
 
 GatewAI can restrict which models a caller may use, based on their identity (groups, roles, scopes, …). Access control is **optional** and **default-deny**: when a `policies` block is configured, a request is allowed only if a rule both matches the caller and grants the requested model. With no `policies` block there is no access control.
 
-Access control **requires authentication** (`auth.mode` set) — it evaluates the `Principal` resolved by the [authentication](/configure/authentication/) layer, so the gateway refuses to start with `policies` but no `auth.mode`.
+Access control **requires authentication** (`auth.mode` set) — it evaluates the `Principal` resolved by the [authentication](../configure/authentication/) layer, so the gateway refuses to start with `policies` but no `auth.mode`.
 
 ## Configuration
 

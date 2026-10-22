@@ -312,24 +312,24 @@ Kept for backward compatibility and emitted alongside the OpenAI set:
 
 | Metric | Labels | Description |
 |---|---|---|
-| `GatewAI_ratelimit_requests_total` | `service_type, user_type, result` | Request-rate checks (`allowed` / `rejected`) |
-| `GatewAI_ratelimit_consumer_hits_total` | `service_type, user_type` | Consumers that hit their request-rate limit |
-| `GatewAI_ratelimit_errors_total` | `service_type` | Redis errors during request-rate check |
-| `GatewAI_token_ratelimit_checked_total` | `service_type, user_type, result` | Token-budget checks (`allowed` / `rejected`) |
-| `GatewAI_token_ratelimit_errors_total` | `service_type` | Redis errors during token-budget check |
+| `gatewai_ratelimit_requests_total` | `service_type, user_type, result` | Request-rate checks (`allowed` / `rejected`) |
+| `gatewai_ratelimit_consumer_hits_total` | `service_type, user_type, consumer` | Consumers that hit their request-rate limit |
+| `gatewai_ratelimit_errors_total` | `service_type` | Redis errors during request-rate check |
+| `gatewai_token_ratelimit_checked_total` | `service_type, user_type, result` | Token-budget checks (`allowed` / `rejected`) |
+| `gatewai_token_ratelimit_errors_total` | `service_type` | Redis errors during token-budget check |
 
 ### Example queries
 
 ```promql
 # Request rejection rate per service
-sum by (service_type) (rate(GatewAI_ratelimit_requests_total{result="rejected"}[5m]))
+sum by (service_type) (rate(gatewai_ratelimit_requests_total{result="rejected"}[5m]))
 /
-sum by (service_type) (rate(GatewAI_ratelimit_requests_total[5m]))
+sum by (service_type) (rate(gatewai_ratelimit_requests_total[5m]))
 
 # Token budget rejection rate per service
-sum by (service_type) (rate(GatewAI_token_ratelimit_checked_total{result="rejected"}[5m]))
+sum by (service_type) (rate(gatewai_token_ratelimit_checked_total{result="rejected"}[5m]))
 /
-sum by (service_type) (rate(GatewAI_token_ratelimit_checked_total[5m]))
+sum by (service_type) (rate(gatewai_token_ratelimit_checked_total[5m]))
 ```
 
 ## PrometheusRules

@@ -92,7 +92,8 @@ See [Service registry](../configure/service-registry.md#backend-pools-backend_po
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `gatewai_guardrails_pii_blocked_total` | counter | `service_type`, `model` | Requests blocked by PII guardrail |
+| `gatewai_guardrails_total` | counter | `service_type`, `model`, `stage` (`input`\|`output`), `action` (`block`\|`redact`\|`flag`), `result` (`blocked`\|`redacted`\|`flagged`) | Primary guardrails counter — one increment per inline (input/output) guardrail action |
+| `gatewai_guardrails_pii_blocked_total` | counter | `service_type`, `model` | Requests blocked by PII guardrail (retained for continuity) |
 | `gatewai_guardrails_evaluations_total` | counter | `service_type`, `model`, `stage` (`input`\|`output`) | Every guardrails-enabled evaluation, regardless of outcome — the denominator for a hit rate against `gatewai_guardrails_total` |
 | `gatewai_guardrails_async_total` | counter | `service_type`, `model`, `detector`, `result` (`flagged`\|`blocked`\|`redacted`\|`error`) | Result-stage guardrail detections on async job results |
 | `gatewai_guardrails_model_detections_total` | counter | `service_type`, `model`, `stage`, `detector`, `mode` (`sync`\|`async`), `result` (`blocked`\|`flagged`) | Detections from a model-backed guardrail detector |
@@ -100,6 +101,15 @@ See [Service registry](../configure/service-registry.md#backend-pools-backend_po
 | `gatewai_guardrails_model_errors_total` | counter | `detector`, `reason` (`timeout`\|`unreachable`\|`bad_response`) | Model-backed guardrail detector call failures |
 | `gatewai_guardrails_model_cache_total` | counter | `detector`, `result` (`hit`\|`miss`) | Model-backed guardrail verdict-cache lookups |
 | `gatewai_guardrails_model_skipped_total` | counter | `detector`, `reason` | Model-backed guardrail calls skipped by a guard (e.g. the input-length gate) |
+
+### Realtime (WebSocket)
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `gatewai_realtime_sessions_total` | counter | `service_type`, `model`, `outcome` | Realtime WS sessions, by close outcome |
+| `gatewai_realtime_active_sessions` | gauge | `service_type`, `model` | Currently open realtime WS sessions |
+| `gatewai_realtime_audio_seconds_total` | counter | `service_type`, `model`, `user_type` | Audio seconds metered from client→backend binary frames |
+| `gatewai_realtime_session_duration_seconds` | histogram | `service_type`, `model` | Realtime session duration. Buckets: 1s–3600s |
 
 ### Authentication
 
@@ -136,3 +146,4 @@ See [Service registry](../configure/service-registry.md#backend-pools-backend_po
 | `gatewai_relay_s3_operation_duration_seconds` | histogram | `operation` | Relay S3 operation duration. Default Prometheus buckets |
 | `gatewai_relay_redis_publish_errors_total` | counter | — | Redis pub/sub publish errors on job completion |
 | `gatewai_relay_redis_done_errors_total` | counter | — | Redis errors when removing job from processing list |
+| `gatewai_relay_gateway_callback_errors_total` | counter | — | Failed gateway completion-callback calls (`POST /-/relay/jobs/{id}/complete`) — the debit/usage/webhook side effects were not triggered for that job |

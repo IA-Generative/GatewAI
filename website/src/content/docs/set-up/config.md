@@ -103,7 +103,7 @@ See [Encryption](../configure/encryption) for details.
 ### `metrics`
 
 ```yaml
-metrics_config:
+metrics:
   top_consumers: 20      # expose top-N consumers via gauge; 0 = disabled
   consumer_labels: false # per-consumer labels on counter (< 50 consumers only)
 ```
@@ -124,9 +124,12 @@ See [Rate limiting](../configure/rate-limiting) for details.
 
 ## Relay config reference
 
-The relay config file (`relay/config.yaml` by default, overridden by `CONFIG_PATH`) covers connectivity and service registration only.
+The relay config file (`relay/config.yaml` by default, overridden by `CONFIG_PATH`) covers the model it serves, connectivity (Redis, S3, the local inference backend, the gateway callback), and the processing lease. There is no `services:` list — one relay serves one `model`.
 
 ```yaml
+model: "whisper-diarization"   # the model this relay serves (queue relay:<model>:pending)
+lease_ttl: "60s"               # per-job processing lease TTL; refreshed every lease_ttl/3
+
 redis:
   addr: "redis:6379"
   password: ""
@@ -142,13 +145,19 @@ s3:
 encryption:
   key: "${ENCRYPTION_KEY}"   # must match the gateway key
 
-services:
-  - type: transcription
-    model: whisper-large-v3
-    inference_url: "http://127.0.0.1:9000/v1/audio/transcriptions"
+# Local inference backend. The OpenAI path is supplied per-job by the gateway
+# (Job.inference_url) and appended to base_url at runtime.
+inference:
+  base_url: "http://127.0.0.1:9000"
+  timeout: "300s"
+  ready_timeout: "10m"
 
-queue:
-  pop_timeout: 5m   # BLMOVE timeout; relay exits cleanly on timeout
+# Completion callback: after persisting the result the relay calls
+# POST <base_url>/-/relay/jobs/{id}/complete so usage + webhooks fire once per job.
+gateway:
+  base_url: "http://gatewai:8080"
+
+queue_pop_timeout: "30s"   # BLMOVE timeout; relay exits 0 on timeout (KEDA scale-to-zero)
 ```
 
-The `encryption.key` must be identical in the gateway and every relay sidecar.
+The `encryption.key` must be identical in the gateway and every relay.
