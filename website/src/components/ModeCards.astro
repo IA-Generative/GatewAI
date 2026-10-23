@@ -3,17 +3,17 @@ const modes = [
   {
     title: 'Async',
     endpoint: 'POST /jobs/{type}',
-    description: 'Fichiers lourds, tâches longues (>30s), résultat via webhook.',
+    description: 'Large files, long tasks (>30s), result via webhook.',
   },
   {
     title: 'Sync',
     endpoint: 'POST /v1/*',
-    description: 'SDK OpenAI, faible latence, réponse directe.',
+    description: 'OpenAI SDK, low latency, direct response.',
   },
   {
     title: 'LLM proxy',
     endpoint: 'POST /v1/* + provider',
-    description: 'OpenAI · Anthropic · Ollama · vLLM avec cache Redis et métriques.',
+    description: 'OpenAI · Anthropic · Ollama · vLLM with Redis cache and metrics.',
   },
 ];
 ---
