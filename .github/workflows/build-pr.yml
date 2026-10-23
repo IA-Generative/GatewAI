@@ -57,7 +57,7 @@ jobs:
           echo "tag=rc-${SHA}"                                >> $GITHUB_OUTPUT
           echo "image=ghcr.io/${OWNER}/gatewai/gateway"    >> $GITHUB_OUTPUT
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4
         with:
@@ -135,7 +135,7 @@ jobs:
           echo "tag=rc-${SHA}"                             >> $GITHUB_OUTPUT
           echo "image=ghcr.io/${OWNER}/gatewai/relay"   >> $GITHUB_OUTPUT
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4
         with:
