@@ -1,0 +1,1041 @@
+apiVersion: v1
+entries:
+  gatewai-gateway:
+  - apiVersion: v2
+    appVersion: v0.26.0
+    created: "2026-10-22T12:28:40.298738759Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: 8d4108df2a3bd837fa88b2e26b5c24040e4938e4831a72531346501770a8500c
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/GatewAI/releases/download/gatewai-gateway-0.26.0/gatewai-gateway-0.26.0.tgz
+    version: 0.26.0
+  - apiVersion: v2
+    appVersion: v0.25.0
+    created: "2026-10-20T07:30:38.920164012Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: cb012e0182630cccb3240144680f96d4c18868eab6505ba1dcee4638de0fba19
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.25.0/gatewai-gateway-0.25.0.tgz
+    version: 0.25.0
+  - apiVersion: v2
+    appVersion: v0.24.0
+    created: "2026-10-19T20:16:50.587071543Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: e787361e9449cb788ff0079a96280080daff618fd61c1c3da14d082989a468dc
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.24.0/gatewai-gateway-0.24.0.tgz
+    version: 0.24.0
+  - apiVersion: v2
+    appVersion: v0.23.1
+    created: "2026-09-28T16:03:05.008709839Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: 2061ee55bab63e99a27e15102520e3622cbd767f1a5f476e8d1b0cf199fa2d0b
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.23.1/gatewai-gateway-0.23.1.tgz
+    version: 0.23.1
+  - apiVersion: v2
+    appVersion: v0.23.0
+    created: "2026-09-15T12:57:27.528935323Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: be9d7916284c0e3112e96b4402189d439ecf10732d4195401f7f6722cedd53e3
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.23.0/gatewai-gateway-0.23.0.tgz
+    version: 0.23.0
+  - apiVersion: v2
+    appVersion: v0.22.0
+    created: "2026-09-07T20:03:02.882566718Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: a8b1ffeaf25d1948fba56d59626b398e498f1c70a1e4a0338d1218befaf2eb4e
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.22.0/gatewai-gateway-0.22.0.tgz
+    version: 0.22.0
+  - apiVersion: v2
+    appVersion: v0.21.0
+    created: "2026-08-27T09:33:35.185916465Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: 347e73bd690a4c46c95281d2d05b4878c1eacc60008493d14fa71061624f5a23
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.21.0/gatewai-gateway-0.21.0.tgz
+    version: 0.21.0
+  - apiVersion: v2
+    appVersion: v0.20.2
+    created: "2026-07-31T10:00:02.823902655Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: 5e643b5a8ae34ebbb5f7688a5a95a42034c2a0d1e72aa758562951caf93f019a
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.20.3/gatewai-gateway-0.20.3.tgz
+    version: 0.20.3
+  - apiVersion: v2
+    appVersion: v0.20.1
+    created: "2026-07-28T09:11:33.80987054Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: e3afd26d88e965a9914ef38dbf009b566ebaf009d154ba2d35f74de1ad606747
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.20.2/gatewai-gateway-0.20.2.tgz
+    version: 0.20.2
+  - apiVersion: v2
+    appVersion: v0.20.0
+    created: "2026-07-27T14:36:46.255564272Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: abfade96b0f8c4954f1022fc614b082c6131191e8e8dc27a9f083dbeef5ac8d2
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.20.1/gatewai-gateway-0.20.1.tgz
+    version: 0.20.1
+  - apiVersion: v2
+    appVersion: v0.20.0
+    created: "2026-07-21T14:14:50.975422319Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: 23099d793f5c8e7b0a4ca71160717a016e1fe34b199d92472540e29280432424
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.20.0/gatewai-gateway-0.20.0.tgz
+    version: 0.20.0
+  - apiVersion: v2
+    appVersion: v0.19.0
+    created: "2026-07-10T07:21:27.384500826Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: bf66cc17e6a22e5f087c80f5f2bcef966247c4af81c204325aaa64e148ed6984
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.19.0/gatewai-gateway-0.19.0.tgz
+    version: 0.19.0
+  - apiVersion: v2
+    appVersion: v0.18.0
+    created: "2026-06-24T15:18:54.266486787Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: ef41efab56677898882fe1bcb8cda809fa1de7f90a1480a85084a23280138b09
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.18.0/gatewai-gateway-0.18.0.tgz
+    version: 0.18.0
+  - apiVersion: v2
+    appVersion: v0.17.0
+    created: "2026-06-19T08:23:04.790547217Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: e960bb5c4c8a2dba481b0fc5408d7cf82f93c8ec36e99db2ab42e6c84f4706a1
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.17.0/gatewai-gateway-0.17.0.tgz
+    version: 0.17.0
+  - apiVersion: v2
+    appVersion: v0.16.1
+    created: "2026-06-16T12:59:41.479352532Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for GatewAI inference jobs
+    digest: f3fb3ba93af453ce5d26f20d911b18914de433d304fcc370f50ce28b7f21f14f
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.16.1/gatewai-gateway-0.16.1.tgz
+    version: 0.16.1
+  - apiVersion: v2
+    appVersion: v0.16.0
+    created: "2026-06-12T09:28:51.082596088Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for GatewAI inference jobs
+    digest: 724009519f08b91286ad699464c31525f178cbc94487a28e49c232c44936b32f
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.16.0/gatewai-gateway-0.16.0.tgz
+    version: 0.16.0
+  - apiVersion: v2
+    appVersion: v0.15.1
+    created: "2026-06-09T08:30:35.153383383Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for GatewAI inference jobs
+    digest: 6ca9d5cc8441302615a6ca1f8fc91a429b839ac6dd3c4893850440eaac572cc9
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.15.2/gatewai-gateway-0.15.2.tgz
+    version: 0.15.2
+  - apiVersion: v2
+    appVersion: v0.15.1
+    created: "2026-06-09T07:45:29.26500315Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for GatewAI inference jobs
+    digest: 40c328486f1b6a129ba61aba4d7184f850c71ac80c191a173620085a03f96ac3
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.15.1/gatewai-gateway-0.15.1.tgz
+    version: 0.15.1
+  - apiVersion: v2
+    appVersion: v0.15.0
+    created: "2026-06-05T14:50:01.032706488Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for GatewAI inference jobs
+    digest: 7aa2367591b355195aac13ea89e45b26070b61102d6d7e3e595dd0f1e89e8335
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.15.0/gatewai-gateway-0.15.0.tgz
+    version: 0.15.0
+  - apiVersion: v2
+    appVersion: v0.14.1
+    created: "2026-06-05T14:32:29.32531328Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for GatewAI inference jobs
+    digest: 62f366584e69da048a93f797bccf3e647630d2dc735472240508c9051b5b8393
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/Qatr-io/GatewAI/releases/download/gatewai-gateway-0.14.1/gatewai-gateway-0.14.1.tgz
+    version: 0.14.1
+  kevent-gateway:
+  - apiVersion: v2
+    appVersion: v0.14.1
+    created: "2026-06-05T12:35:13.049291914Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 846dcaf80fa3bd9cf385dc051ef3734d7a3a04be2c502d0cc2ad4c02b7a001d2
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.14.1/kevent-gateway-0.14.1.tgz
+    version: 0.14.1
+  - apiVersion: v2
+    appVersion: v0.14.0
+    created: "2026-06-04T15:44:42.353726706Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 159864d9a1011607772a5c5a8f23d0bfadedcad5fd8488914839699784e1d55b
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.14.0/kevent-gateway-0.14.0.tgz
+    version: 0.14.0
+  - apiVersion: v2
+    appVersion: v0.13.0
+    created: "2026-06-01T14:09:29.729154402Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: c82a6995b6378343daa001ae52975c6b9972fee4dfcf68201717f4cc8ecd95dd
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.13.0/kevent-gateway-0.13.0.tgz
+    version: 0.13.0
+  - apiVersion: v2
+    appVersion: v0.12.1
+    created: "2026-05-29T13:03:22.602099837Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: e7c591472f66b789f24857b7c7aaee1bd4b361cfb9c04710d5070ae9bc2241a0
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.12.1/kevent-gateway-0.12.1.tgz
+    version: 0.12.1
+  - apiVersion: v2
+    appVersion: v0.11.0
+    created: "2026-05-19T15:28:05.398775068Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 1e65a98c868d1a1938cc486a102b806f54e0ad4d5579eb751066237931356607
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.11.0/kevent-gateway-0.11.0.tgz
+    version: 0.11.0
+  - apiVersion: v2
+    appVersion: v0.10.0
+    created: "2026-05-18T14:19:47.064020333Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 6fcec60ed19dd5870ba8abf2798381616e98e439dd17c1e5bf40e8c0b266f00e
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.10.0/kevent-gateway-0.10.0.tgz
+    version: 0.10.0
+  - apiVersion: v2
+    appVersion: v0.9.0
+    created: "2026-05-12T08:53:43.503239806Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 966544c647778f698365a89dd029e06b72839564063c0e067a71864f8d88a321
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.9.0/kevent-gateway-0.9.0.tgz
+    version: 0.9.0
+  - apiVersion: v2
+    appVersion: v0.8.0
+    created: "2026-05-05T09:57:18.079446408Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: b7b3bcdde07b446dbb77636aa62ad152deecdfc1d8d5f6cd001ad7343a51befb
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.8.0/kevent-gateway-0.8.0.tgz
+    version: 0.8.0
+  - apiVersion: v2
+    appVersion: v0.7.0
+    created: "2026-04-28T14:39:41.834337883Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 83462d38ae1063446a82a939d14cefaee154c14228970a1d857bb23a174c2e37
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.7.0/kevent-gateway-0.7.0.tgz
+    version: 0.7.0
+  - apiVersion: v2
+    appVersion: v0.6.4
+    created: "2026-04-21T15:20:40.186898254Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 13211912749fa36d656a71863cb6e9ed2730622140415cb999d1758d496e9d57
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.6.5/kevent-gateway-0.6.5.tgz
+    version: 0.6.5
+  - apiVersion: v2
+    appVersion: v0.6.3
+    created: "2026-04-15T13:47:16.337767352Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: c25fc819690890a47957aa9346b7d8f9a259fdf02292767314936ad7c8ad8f9e
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.6.4/kevent-gateway-0.6.4.tgz
+    version: 0.6.4
+  - apiVersion: v2
+    appVersion: v0.6.2
+    created: "2026-04-14T08:52:56.513951063Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: e4f58808c307642d1c819c450d3670aa305a0366c3d348acd491c63fa1444cff
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.6.3/kevent-gateway-0.6.3.tgz
+    version: 0.6.3
+  - apiVersion: v2
+    appVersion: v0.6.2
+    created: "2026-04-14T07:33:49.261066419Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 66d16cb54adbbaf56a9cbd1e16919bb396e1d0294864e776bf8246c5c7286490
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.6.2/kevent-gateway-0.6.2.tgz
+    version: 0.6.2
+  - apiVersion: v2
+    appVersion: v0.6.1
+    created: "2026-04-13T10:18:49.381288145Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 9ffd0a91b8d5a0790474b1016399fe2a8b5959377265d93624118f8523f1ae2b
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.6.1/kevent-gateway-0.6.1.tgz
+    version: 0.6.1
+  - apiVersion: v2
+    appVersion: v0.6.0
+    created: "2026-04-10T09:29:14.350012571Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: f0c20411c86d65eb11d663dd080d0b191472c1abcbdcf2a9ab78e59d0eeffed5
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.6.0/kevent-gateway-0.6.0.tgz
+    version: 0.6.0
+  - apiVersion: v2
+    appVersion: v0.5.3
+    created: "2026-04-09T08:20:13.49352926Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: faa5a3832a75e725be02f35e763e210b1691cc2768aadc8015c910adb820c664
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.17/kevent-gateway-0.5.17.tgz
+    version: 0.5.17
+  - apiVersion: v2
+    appVersion: v0.5.2
+    created: "2026-04-09T07:59:55.369131013Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 33d88568ba5bcc200a451089bb686dd46009a64d1f14df61ebe86357ce106670
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.16/kevent-gateway-0.5.16.tgz
+    version: 0.5.16
+  - apiVersion: v2
+    appVersion: v0.5.2
+    created: "2026-04-09T07:35:05.921469555Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 33fd62af63e0f4891319996ca37013183c76393ff706b5792542e279d6b3fd42
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.15/kevent-gateway-0.5.15.tgz
+    version: 0.5.15
+  - apiVersion: v2
+    appVersion: v0.5.1
+    created: "2026-04-08T09:13:42.157699499Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 3dc73bcaf3cf10d3091094eef56d7c369a43924a5db68274b852d71191394b3b
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.14/kevent-gateway-0.5.14.tgz
+    version: 0.5.14
+  - apiVersion: v2
+    appVersion: v0.5.0
+    created: "2026-04-08T08:26:43.593259719Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 64bba954ceccd717dcd814a7d9a7752afe0ee52dcb5347e3befa9928f9040e36
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.13/kevent-gateway-0.5.13.tgz
+    version: 0.5.13
+  - apiVersion: v2
+    appVersion: v0.5.0
+    created: "2026-04-03T07:57:54.526522366Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: ec5e23e0c26079c1b0507f68735b26d08dd51584ebdad0f905e84c0ec8600c80
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.12/kevent-gateway-0.5.12.tgz
+    version: 0.5.12
+  - apiVersion: v2
+    appVersion: v0.4.18
+    created: "2026-04-02T13:14:04.785018964Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: abbb2de366678555eb701cb2ce15a2c41ffd1d008819454cab6b5440251b6cb4
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.11/kevent-gateway-0.5.11.tgz
+    version: 0.5.11
+  - apiVersion: v2
+    appVersion: v0.4.17
+    created: "2026-04-02T13:11:15.153978888Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 44f339fbef01baee5a17500f3bbb1258bf7d68a8f33da65f7191ee5694f755a9
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.10/kevent-gateway-0.5.10.tgz
+    version: 0.5.10
+  - apiVersion: v2
+    appVersion: v0.4.16
+    created: "2026-04-02T13:01:40.87012425Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 829881edef520d39451e377ce2351e3fd4a7b505e9703ca0ef4bc75c027962a0
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.9/kevent-gateway-0.5.9.tgz
+    version: 0.5.9
+  - apiVersion: v2
+    appVersion: v0.4.15
+    created: "2026-04-02T10:36:09.261203652Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: b0081823c457426074d90dc1862a731c7c2692ef6cc7d17c33c5883b35206b2e
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.8/kevent-gateway-0.5.8.tgz
+    version: 0.5.8
+  - apiVersion: v2
+    appVersion: v0.4.14
+    created: "2026-04-02T10:28:45.039054374Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 58550d17218fc02ae681f5e25dd978abb9770d1f3fe12965f678a598dc12d68c
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.7/kevent-gateway-0.5.7.tgz
+    version: 0.5.7
+  - apiVersion: v2
+    appVersion: v0.4.13
+    created: "2026-04-02T10:24:04.851319505Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 7807f97ee567f19b8e18821b592bbce72f6314722ea8f3909cd1529c61e69fe2
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.6/kevent-gateway-0.5.6.tgz
+    version: 0.5.6
+  - apiVersion: v2
+    appVersion: v0.4.12
+    created: "2026-04-02T09:52:59.325074449Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 72df09985d748a3ba9c65e50b549ef7f9f2053f991aa0595686ade7822810767
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.5/kevent-gateway-0.5.5.tgz
+    version: 0.5.5
+  - apiVersion: v2
+    appVersion: v0.4.11
+    created: "2026-04-02T06:57:27.554211068Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 40b028c2eec06acbe0a7f0ad8b5b6e5ffaaa8980c428d924effe44162873c31f
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.4/kevent-gateway-0.5.4.tgz
+    version: 0.5.4
+  - apiVersion: v2
+    appVersion: v0.4.10
+    created: "2026-04-01T08:51:28.684767407Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 7a6aa04a096a1bb21c84745f250e4faf26e703fcffb4d79c89928c8f36a59cc1
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.3/kevent-gateway-0.5.3.tgz
+    version: 0.5.3
+  - apiVersion: v2
+    appVersion: v0.4.10
+    created: "2026-04-01T08:38:22.233787254Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: f0cc01401607bda350c9d19c5b245b6d85aded771e00b4aa153e687689df3c8d
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.2/kevent-gateway-0.5.2.tgz
+    version: 0.5.2
+  - apiVersion: v2
+    appVersion: v0.4.10
+    created: "2026-03-31T09:19:04.626648584Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 79c2ee4ceb51f8d36c28a78537fa600868839f31585efe46a37dbf4d51fb4bc7
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.1/kevent-gateway-0.5.1.tgz
+    version: 0.5.1
+  - apiVersion: v2
+    appVersion: v0.4.9
+    created: "2026-03-30T13:50:51.351303795Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: e7b41ae13b6834c91e08095385991c39375e594d5a16bd77a115444a9d5a7afb
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/kevent-ai/releases/download/kevent-gateway-0.5.0/kevent-gateway-0.5.0.tgz
+    version: 0.5.0
+  - apiVersion: v2
+    appVersion: v0.4.8
+    created: "2026-03-24T14:39:34.727065398Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: ac54d56d7cec176b9bd71acf5e44bf3a463399a108dc42161c131a92c30ba2dc
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.4.8/kevent-gateway-0.4.8.tgz
+    version: 0.4.8
+  - apiVersion: v2
+    appVersion: v0.4.7
+    created: "2026-03-24T14:29:11.670240538Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: a1809916d48a5ed183ad9ff1e921676ca181d95a6e65cd4c87e5db09773af5b1
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.4.7/kevent-gateway-0.4.7.tgz
+    version: 0.4.7
+  - apiVersion: v2
+    appVersion: v0.4.6
+    created: "2026-03-24T14:12:24.263389166Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: a0f565954e1fdff914705f7308e1015bb9c589ccd1d7029d2add7f7c4f7c17a7
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.4.6/kevent-gateway-0.4.6.tgz
+    version: 0.4.6
+  - apiVersion: v2
+    appVersion: v0.4.5
+    created: "2026-03-24T14:05:22.912945133Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 29102417f757a96e56bc19f392dd8b5b128ee3ba729b71246d47dfe2211ad0b8
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.4.5/kevent-gateway-0.4.5.tgz
+    version: 0.4.5
+  - apiVersion: v2
+    appVersion: 0.4.4
+    created: "2026-03-23T15:34:17.710823384Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: fcb661869dd1d0e99379bebb9dceba0dc4aeadc196f2583eb86c09faacb052b8
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.4.4/kevent-gateway-0.4.4.tgz
+    version: 0.4.4
+  - apiVersion: v2
+    appVersion: 0.4.2
+    created: "2026-03-19T08:22:34.227696984Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 2ce1865f9e0b11faeada9310b638ebc147057f7fdc75c3986e4b22cbd8d5c258
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.4.3/kevent-gateway-0.4.3.tgz
+    version: 0.4.3
+  - apiVersion: v2
+    appVersion: 0.4.2
+    created: "2026-03-16T17:03:24.22451574Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: aaef19494c178a6ef4fa3ffe6ede232d591ed183290efe41f83cfc4e7dff2a65
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.4.2/kevent-gateway-0.4.2.tgz
+    version: 0.4.2
+  - apiVersion: v2
+    appVersion: 0.4.1
+    created: "2026-03-16T16:21:06.505856507Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 52ef2c9d43c8252d0dea94e37235c59d7d52116c0981c6902e30655eb0a9655e
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.4.1/kevent-gateway-0.4.1.tgz
+    version: 0.4.1
+  - apiVersion: v2
+    appVersion: 0.4.0
+    created: "2026-03-16T16:09:32.630029042Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: ca60f1327c24ccbe31009337bac5788dd45b1d2eb060bf22df532ba5d050cc66
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.4.0/kevent-gateway-0.4.0.tgz
+    version: 0.4.0
+  - apiVersion: v2
+    appVersion: 0.3.2
+    created: "2026-03-16T07:48:53.983020315Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 7519e147ea43cb6752a38964cd050e9ee5a8126f9301d4d315f59143393e83cb
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.3.2/kevent-gateway-0.3.2.tgz
+    version: 0.3.2
+  - apiVersion: v2
+    appVersion: 0.3.1
+    created: "2026-03-16T07:48:30.873418426Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 5205efc39420b764f201621070a41b48942ec02222c90c48b3d8a15ae5f3c423
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.3.1/kevent-gateway-0.3.1.tgz
+    version: 0.3.1
+  - apiVersion: v2
+    appVersion: 0.3.0
+    created: "2026-03-13T13:32:31.078940329Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 2b07af2f2ae1c5f52a570e16a870edc80c82806ad85d14b0c06f98887dab58fa
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.3.0/kevent-gateway-0.3.0.tgz
+    version: 0.3.0
+  - apiVersion: v2
+    appVersion: 0.2.7
+    created: "2026-03-13T09:54:47.058961883Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 540b05add1be55de1d0e22548af59755324509260f3af17629c4bf2a9c678a60
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.2.3/kevent-gateway-0.2.3.tgz
+    version: 0.2.3
+  - apiVersion: v2
+    appVersion: 0.2.6
+    created: "2026-03-13T09:41:08.197586055Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 7c2683fbeae7d640d8dcd73e63ab01e486e67ad5280c5219a32176f524986fd3
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.2.2/kevent-gateway-0.2.2.tgz
+    version: 0.2.2
+  - apiVersion: v2
+    appVersion: 0.2.6
+    created: "2026-03-12T10:36:04.355265626Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: e9edd98da9071da4aef633d88933c10f0c13b019d5c78e5537cd5f40e22cae1a
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.2.1/kevent-gateway-0.2.1.tgz
+    version: 0.2.1
+  - apiVersion: v2
+    appVersion: 0.2.5
+    created: "2026-03-11T15:48:53.464039954Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    description: API gateway for kevent inference jobs
+    digest: 4459f764616e140752d08f8b35563d7540dafffd7fac18388dc398b7722da7d6
+    name: kevent-gateway
+    type: application
+    urls:
+    - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.2.0/kevent-gateway-0.2.0.tgz
+    version: 0.2.0
+generated: "2026-10-22T12:28:40.298897156Z"
