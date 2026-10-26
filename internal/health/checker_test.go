@@ -144,6 +144,104 @@ func TestProbeURL_DefaultPath(t *testing.T) {
 	}
 }
 
+func TestProbe_ScaleToZero_NeverProbed(t *testing.T) {
+	probed := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probed = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	d := &service.Def{
+		Type:         "llm",
+		Model:        "kserve-model",
+		InferenceURL: srv.URL,
+		HealthCheck:  config.ServiceHealthConfig{ScaleToZero: true},
+	}
+	got := probeVia(t, d, "5s")
+	if probed {
+		t.Error("scale_to_zero: backend should not have been probed")
+	}
+	if got != "dormant" {
+		t.Errorf("expected dormant, got %s", got)
+	}
+}
+
+func TestProbe_InferenceHeaders_Sent(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	d := &service.Def{
+		Type:             "llm",
+		Model:            "test",
+		InferenceURL:     srv.URL,
+		InferenceHeaders: map[string]string{"Authorization": "Bearer svc-token"},
+		HealthCheck:      config.ServiceHealthConfig{},
+	}
+	probeVia(t, d, "5s")
+	if gotAuth != "Bearer svc-token" {
+		t.Errorf("expected inference header Authorization=Bearer svc-token, got %q", gotAuth)
+	}
+}
+
+func TestProbe_BackendHeaders_Sent(t *testing.T) {
+	var gotKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("X-Api-Key")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	d := &service.Def{
+		Type:         "llm",
+		Model:        "test",
+		InferenceURL: srv.URL,
+		Backends: []service.Backend{
+			{URL: srv.URL, Weight: 1, Headers: map[string]string{"X-Api-Key": "backend-key"}},
+		},
+		HealthCheck: config.ServiceHealthConfig{},
+	}
+	probeVia(t, d, "5s")
+	if gotKey != "backend-key" {
+		t.Errorf("expected X-Api-Key=backend-key, got %q", gotKey)
+	}
+}
+
+func TestProbe_HealthHeaders_Override(t *testing.T) {
+	var gotAuth, gotExtra string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotExtra = r.Header.Get("X-Health-Check")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	d := &service.Def{
+		Type:             "llm",
+		Model:            "test",
+		InferenceURL:     srv.URL,
+		InferenceHeaders: map[string]string{"Authorization": "Bearer svc-token"},
+		HealthCheck: config.ServiceHealthConfig{
+			// Override the service-level Authorization and add an extra header.
+			Headers: map[string]string{
+				"Authorization":  "Bearer health-token",
+				"X-Health-Check": "true",
+			},
+		},
+	}
+	probeVia(t, d, "5s")
+	if gotAuth != "Bearer health-token" {
+		t.Errorf("expected health-check header to override: got Authorization=%q", gotAuth)
+	}
+	if gotExtra != "true" {
+		t.Errorf("expected X-Health-Check=true, got %q", gotExtra)
+	}
+}
+
 func TestProbeURL_TrailingSlashInInferenceURL(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

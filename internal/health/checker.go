@@ -164,8 +164,12 @@ func (c *Checker) runOnce(ctx context.Context) {
 }
 
 // probe makes an HTTP request to the backend's health endpoint.
-// Returns "up" for 2xx–4xx, "down" for 5xx or connection errors.
+// Returns "up" for 2xx–4xx, "down" for 5xx or connection errors,
+// or "dormant" when scale_to_zero is set (no request sent).
 func (c *Checker) probe(ctx context.Context, d *service.Def) string {
+	if d.HealthCheck.ScaleToZero {
+		return "dormant"
+	}
 	timeout := c.defaultTimeout
 	if t := d.HealthCheck.TimeoutDuration(); t > 0 {
 		timeout = t
@@ -188,6 +192,26 @@ func (c *Checker) probe(ctx context.Context, d *service.Def) string {
 	if err != nil {
 		return "down"
 	}
+
+	// Apply headers in increasing priority order:
+	// 1. service-level inference headers
+	// 2. per-backend headers (for the backend matching InferenceURL)
+	// 3. health-check-specific headers (highest priority)
+	for k, v := range d.InferenceHeaders {
+		req.Header.Set(k, v)
+	}
+	for _, b := range d.Backends {
+		if b.URL == d.InferenceURL {
+			for k, v := range b.Headers {
+				req.Header.Set(k, v)
+			}
+			break
+		}
+	}
+	for k, v := range d.HealthCheck.Headers {
+		req.Header.Set(k, v)
+	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return "down"

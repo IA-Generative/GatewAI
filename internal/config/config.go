@@ -251,6 +251,16 @@ type ServiceHealthConfig struct {
 	// Method is the HTTP method used for health probes. Default: "GET".
 	// Use "HEAD" for backends that return no body but support HEAD on their health endpoint.
 	Method string `yaml:"method"`
+	// ScaleToZero disables active health probing for this service.
+	// Use for KServe / Knative backends that scale to zero: active probes would keep
+	// the pod alive and prevent scale-down. The backend reports "dormant" in GET /health
+	// (treated as healthy — not an error state). The pod wakes on the first real request.
+	ScaleToZero bool `yaml:"scale_to_zero"`
+	// Headers are additional HTTP headers sent with every health probe for this service.
+	// Values support ${VAR} env expansion. Applied on top of the service-level
+	// inference_headers and per-backend headers (highest priority — overrides both).
+	// Useful for auth tokens or routing hints required specifically by the health endpoint.
+	Headers map[string]string `yaml:"headers"`
 }
 
 func (h ServiceHealthConfig) TimeoutDuration() time.Duration { return parseDuration(h.Timeout) }
