@@ -69,7 +69,7 @@ jobs:
     if: needs.changes.outputs.helm == 'true'
     steps:
       - uses: actions/checkout@v5
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - run: helm repo add dandydeveloper https://dandydeveloper.github.io/charts
       - run: helm dependency update ./helm/gateway
       - run: helm lint ./helm/gateway
