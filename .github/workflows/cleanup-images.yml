@@ -40,7 +40,7 @@ jobs:
 
       - name: Find rc-<sha> tags whose develop PR is closed
         id: rc
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const decide = require('./scripts/ci/fetch-and-decide.js')

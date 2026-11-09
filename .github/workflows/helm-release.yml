@@ -24,9 +24,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
 
-      - uses: helm/chart-releaser-action@v1.6.0
+      - uses: helm/chart-releaser-action@v1.7.0
         with:
           charts_dir: helm
           skip_existing: true   # évite le 403 si la release existe déjà (ex: rerun)

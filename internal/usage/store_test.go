@@ -663,3 +663,125 @@ func TestListConsumersByType_Paginated(t *testing.T) {
 		t.Errorf("first = %q, want alice", consumers[0])
 	}
 }
+
+// TestGetConsumerUsage_MultiServiceType_NoCrossWiring locks in the two-phase
+// pipelined read: a single consumer with an llm service (tier-keyed tokens +
+// a per-model counter + window) AND a non-llm service (generic tokens + window),
+// each recorded under a DIFFERENT tracked tier, must assemble independently —
+// tokens, tiers, windows and models must not leak across service types — and a
+// third service type with no data must be skipped.
+func TestGetConsumerUsage_MultiServiceType_NoCrossWiring(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	rateLimits := map[string]map[string]config.RateLimitConfig{
+		"llm":   {"premium": {Rate: 100, Period: "1m"}},
+		"audio": {"basic": {Rate: 50, Period: "1m"}},
+	}
+	modelLimits := map[string]map[string]config.RateLimitConfig{
+		"gpt": {"premium": {TokenRate: 5000, TokenPeriod: "1h"}},
+	}
+	store := usage.NewRedisUsageStore(rdb, "", rateLimits, modelLimits, nil)
+	ctx := context.Background()
+
+	// Tracked tiers differ per service type (the caller passes "*").
+	rdb.HSet(ctx, "usage:consumer:llm:usertype", "alice", "premium")
+	rdb.HSet(ctx, "usage:consumer:audio:usertype", "alice", "basic")
+
+	// llm: requests + tier-keyed tokens + per-model counter + window.
+	rdb.ZIncrBy(ctx, "usage:consumer:llm:requests", 10, "alice")
+	rdb.ZIncrBy(ctx, "llm:consumer:tokens:premium:prompt", 300, "alice")
+	rdb.ZIncrBy(ctx, "llm:consumer:tokens:premium:completion", 120, "alice")
+	if err := mr.Set("rl:alice:llm:premium", "7"); err != nil {
+		t.Fatal(err)
+	}
+	if err := mr.Set("trl:alice:model:gpt:premium", "900"); err != nil {
+		t.Fatal(err)
+	}
+
+	// audio: requests + GENERIC tokens (non-llm key format) + window.
+	rdb.ZIncrBy(ctx, "usage:consumer:audio:requests", 4, "alice")
+	rdb.ZIncrBy(ctx, "usage:consumer:audio:tokens:prompt", 55, "alice")
+	rdb.ZIncrBy(ctx, "usage:consumer:audio:tokens:completion", 11, "alice")
+	if err := mr.Set("rl:alice:audio:basic", "2"); err != nil {
+		t.Fatal(err)
+	}
+
+	cu, err := store.GetConsumerUsage(ctx, "alice", "*",
+		[]string{"llm", "audio", "ocr"},
+		map[string][]string{"llm": {"gpt"}, "audio": nil, "ocr": nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byType := map[string]usage.ServiceUsage{}
+	for _, su := range cu.Usage {
+		byType[su.ServiceType] = su
+	}
+	if len(cu.Usage) != 2 {
+		t.Fatalf("expected 2 service types (ocr skipped as empty), got %d: %+v", len(cu.Usage), cu.Usage)
+	}
+	if _, ok := byType["ocr"]; ok {
+		t.Error("ocr should be skipped (no data)")
+	}
+
+	llm := byType["llm"]
+	if llm.UserType != "premium" {
+		t.Errorf("llm user_type = %q, want premium", llm.UserType)
+	}
+	if llm.Total.Tokens == nil || llm.Total.Tokens.Prompt != 300 || llm.Total.Tokens.Completion != 120 {
+		t.Errorf("llm tokens = %+v, want prompt=300 completion=120", llm.Total.Tokens)
+	}
+	if llm.Window == nil || llm.Window.Requests != 7 || llm.Window.RequestLimit != 100 {
+		t.Errorf("llm window = %+v, want requests=7 request_limit=100", llm.Window)
+	}
+	if len(llm.Models) != 1 || llm.Models[0].Model != "gpt" || llm.Models[0].Tokens != 900 || llm.Models[0].TokenLimit != 5000 {
+		t.Errorf("llm models = %+v, want gpt tokens=900 limit=5000", llm.Models)
+	}
+
+	audio := byType["audio"]
+	if audio.UserType != "basic" {
+		t.Errorf("audio user_type = %q, want basic", audio.UserType)
+	}
+	// Generic tokens must be read for the non-llm type, and must NOT be the llm figures.
+	if audio.Total.Tokens == nil || audio.Total.Tokens.Prompt != 55 || audio.Total.Tokens.Completion != 11 {
+		t.Errorf("audio generic tokens = %+v, want prompt=55 completion=11", audio.Total.Tokens)
+	}
+	if audio.Window == nil || audio.Window.Requests != 2 || audio.Window.RequestLimit != 50 {
+		t.Errorf("audio window = %+v, want requests=2 request_limit=50", audio.Window)
+	}
+	if len(audio.Models) != 0 {
+		t.Errorf("audio should have no models, got %+v", audio.Models)
+	}
+}
+
+// TestGetConsumerUsage_EmptyTypeWithQuotaIsSkipped documents (and guards the
+// phase-2 gating optimization for) the rule that a service type with zero
+// cumulative usage is omitted entirely — even when a quota is configured for
+// it. Only the live window counter being zero (with nonzero cumulative usage,
+// see TestGetConsumerUsage_QuotaIncludedEvenWhenUsageZero) surfaces a
+// quota-only window.
+func TestGetConsumerUsage_EmptyTypeWithQuotaIsSkipped(t *testing.T) {
+	rateLimits := map[string]map[string]config.RateLimitConfig{
+		"audio": {"*": {Rate: 100, Period: "1m"}},
+	}
+	store, _, rdb := newStoreWithLimits(t, "", rateLimits)
+	ctx := context.Background()
+
+	// Only "llm" has data; "audio" has a configured quota but no cumulative usage.
+	rdb.ZIncrBy(ctx, "usage:consumer:llm:requests", 2, "alice")
+
+	result, err := store.GetConsumerUsage(ctx, "alice", "*", []string{"llm", "audio"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, su := range result.Usage {
+		if su.ServiceType == "audio" {
+			t.Errorf("audio has zero cumulative usage and must be skipped despite its quota; got %+v", su)
+		}
+	}
+	if len(result.Usage) != 1 || result.Usage[0].ServiceType != "llm" {
+		t.Errorf("expected only llm in usage, got %+v", result.Usage)
+	}
+}

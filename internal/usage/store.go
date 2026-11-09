@@ -62,7 +62,7 @@ func NewRedisUsageStore(rdb *redis.Client, retention string, rateLimits, modelLi
 }
 
 // UpdateRateLimits swaps the rate_limits/modelLimits/budgetKeys maps consulted by
-// getWindowUsage/getModelUsage.
+// buildWindowUsage/buildModelUsage.
 func (s *redisUsageStore) UpdateRateLimits(rateLimits, modelLimits map[string]map[string]config.RateLimitConfig, budgetKeys map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -111,133 +111,220 @@ func (s *redisUsageStore) retentionLabel() string {
 
 // GetConsumerUsage returns cumulative + window usage for consumer across the
 // given service types. Service types with zero data are omitted.
+//
+// All Redis reads are issued in two pipelined round trips per consumer rather
+// than the ~(12 + 2·models) serial calls per service type the earlier
+// implementation made. Phase 1 fetches last_active, the per-service tracked
+// user type, and the user-type-independent counters (requests/jobs/
+// processing_time + generic tokens); phase 2 fetches the user-type-dependent
+// counters (llm tokens, rate-limit windows, per-model token windows) once the
+// tracked tier is known from phase 1. This keeps GET /usage and GET /-/usage
+// proportional to the number of consumers, not the number of individual
+// counters — the dominant cost was round trips through HAProxy, not Redis load.
 func (s *redisUsageStore) GetConsumerUsage(ctx context.Context, consumer, userType string, serviceTypes []string, modelsByType map[string][]string) (*ConsumerUsage, error) {
 	out := &ConsumerUsage{
 		Consumer:  consumer,
 		Retention: s.retentionLabel(),
 	}
 
-	// last_active from usage:consumers
-	score, err := s.rdb.ZScore(ctx, "usage:consumers", consumer).Result()
-	if err == nil {
+	// ---- Phase 1: last_active, tracked user type, and user-type-independent
+	// counters, in one pipelined round trip ----
+	type phase1Svc struct {
+		userType  *redis.StringCmd
+		requests  *redis.FloatCmd
+		jobs      *redis.FloatCmd
+		procTime  *redis.FloatCmd
+		genPrompt *redis.FloatCmd // generic (non-llm-proxy) tokens
+		genComp   *redis.FloatCmd
+	}
+	p1 := s.rdb.Pipeline()
+	lastActive := p1.ZScore(ctx, "usage:consumers", consumer)
+	p1svc := make(map[string]*phase1Svc, len(serviceTypes))
+	for _, svcType := range serviceTypes {
+		p1svc[svcType] = &phase1Svc{
+			userType:  p1.HGet(ctx, "usage:consumer:"+svcType+":usertype", consumer),
+			requests:  p1.ZScore(ctx, "usage:consumer:"+svcType+":requests", consumer),
+			jobs:      p1.ZScore(ctx, "usage:consumer:"+svcType+":jobs", consumer),
+			procTime:  p1.ZScore(ctx, "usage:consumer:"+svcType+":processing_time", consumer),
+			genPrompt: p1.ZScore(ctx, "usage:consumer:"+svcType+":tokens:prompt", consumer),
+			genComp:   p1.ZScore(ctx, "usage:consumer:"+svcType+":tokens:completion", consumer),
+		}
+	}
+	// Best-effort: redis.Nil (missing keys) is expected; a connection-level
+	// failure leaves every command zeroed, mirroring the earlier behaviour of
+	// ignoring per-key read errors rather than failing the whole response.
+	if _, err := p1.Exec(ctx); err != nil && err != redis.Nil {
+		slog.WarnContext(ctx, "usage store: phase-1 pipeline failed", "consumer", consumer, "error", err)
+	}
+
+	if score, err := lastActive.Result(); err == nil {
 		t := time.Unix(int64(score), 0).UTC()
 		out.LastActive = &t
 	}
 
+	// Resolve the effective tier per service type: the tier actually recorded
+	// for this consumer+service (from real requests, via
+	// UsageTracker.TrackUserType) takes precedence over the userType resolved
+	// from the current /usage request's own identity — a consumer can hold a
+	// different role/tier per service.
+	effUserType := make(map[string]string, len(serviceTypes))
 	for _, svcType := range serviceTypes {
-		svc, err := s.getServiceUsage(ctx, consumer, userType, svcType, modelsByType[svcType])
-		if err != nil {
-			slog.WarnContext(ctx, "usage store: failed to read service usage",
-				"consumer", consumer, "service_type", svcType, "error", err)
+		ut := userType
+		if v, err := p1svc[svcType].userType.Result(); err == nil && v != "" {
+			ut = v
+		}
+		effUserType[svcType] = ut
+	}
+
+	// ---- Phase 2: user-type-dependent counters (llm tokens, rate-limit
+	// windows, per-model token windows), in one pipelined round trip ----
+	type modelCmd struct {
+		model     string
+		budgetKey string
+		counter   intTTL
+	}
+	type phase2Svc struct {
+		llmPrompt *redis.FloatCmd
+		llmComp   *redis.FloatCmd
+		rl        intTTL
+		trl       intTTL
+		ptrl      intTTL
+		models    []modelCmd
+	}
+	// Snapshot the budget key for every model once under a single RLock, rather
+	// than taking the lock per model inside the build loop below.
+	budgetKeyFor := make(map[string]string)
+	s.mu.RLock()
+	for _, svcType := range serviceTypes {
+		for _, model := range modelsByType[svcType] {
+			bk := s.budgetKeys[model] // the shared group when configured, else the model name
+			if bk == "" {
+				bk = model
+			}
+			budgetKeyFor[model] = bk
+		}
+	}
+	s.mu.RUnlock()
+
+	// hasPhase1Data reports whether phase 1 already found any usage for a
+	// service type (requests/jobs/processing_time or generic tokens).
+	hasPhase1Data := func(svcType string) bool {
+		c := p1svc[svcType]
+		return int64(c.requests.Val()) != 0 || int64(c.jobs.Val()) != 0 ||
+			c.procTime.Val() != 0 || int64(c.genPrompt.Val()) != 0 || int64(c.genComp.Val()) != 0
+	}
+
+	p2 := s.rdb.Pipeline()
+	getIntTTL := func(key string) intTTL {
+		return intTTL{get: p2.Get(ctx, key), ttl: p2.TTL(ctx, key)}
+	}
+	p2svc := make(map[string]*phase2Svc, len(serviceTypes))
+	for _, svcType := range serviceTypes {
+		// A non-llm service type with no phase-1 data is skipped during assembly
+		// regardless of its window/model counters, so don't queue phase-2 reads
+		// we'd only discard. LLM tokens live in phase 2, so llm is always queued.
+		if svcType != "llm" && !hasPhase1Data(svcType) {
 			continue
 		}
-		if svc == nil {
+		ut := effUserType[svcType]
+		c := &phase2Svc{
+			rl:   getIntTTL(fmt.Sprintf("rl:%s:%s:%s", consumer, svcType, ut)),
+			trl:  getIntTTL(fmt.Sprintf("trl:%s:%s:%s", consumer, svcType, ut)),
+			ptrl: getIntTTL(fmt.Sprintf("ptrl:%s:%s:%s", consumer, svcType, ut)),
+		}
+		// LLM tokens are keyed by tier, so they belong to phase 2.
+		if svcType == "llm" {
+			c.llmPrompt = p2.ZScore(ctx, "llm:consumer:tokens:"+ut+":prompt", consumer)
+			c.llmComp = p2.ZScore(ctx, "llm:consumer:tokens:"+ut+":completion", consumer)
+		}
+		for _, model := range modelsByType[svcType] {
+			budgetKey := budgetKeyFor[model]
+			c.models = append(c.models, modelCmd{
+				model:     model,
+				budgetKey: budgetKey,
+				counter:   getIntTTL(fmt.Sprintf("trl:%s:model:%s:%s", consumer, budgetKey, ut)),
+			})
+		}
+		p2svc[svcType] = c
+	}
+	if _, err := p2.Exec(ctx); err != nil && err != redis.Nil {
+		slog.WarnContext(ctx, "usage store: phase-2 pipeline failed", "consumer", consumer, "error", err)
+	}
+
+	// ---- Assemble per service type, skipping types with no recorded data ----
+	for _, svcType := range serviceTypes {
+		p1c := p1svc[svcType]
+		p2c := p2svc[svcType]
+		ut := effUserType[svcType]
+
+		requests := int64(p1c.requests.Val())
+		jobs := int64(p1c.jobs.Val())
+		procTime := p1c.procTime.Val()
+
+		// LLM tokens (tier-keyed) take precedence; generic tokens are only
+		// consulted when the llm keys found nothing, so the two key formats
+		// never both contribute to the same response.
+		var tokens *TokenUsage
+		if svcType == "llm" {
+			prompt := int64(p2c.llmPrompt.Val())
+			completion := int64(p2c.llmComp.Val())
+			if prompt > 0 || completion > 0 {
+				tokens = &TokenUsage{Prompt: prompt, Completion: completion}
+			}
+		}
+		if tokens == nil {
+			prompt := int64(p1c.genPrompt.Val())
+			completion := int64(p1c.genComp.Val())
+			if prompt > 0 || completion > 0 {
+				tokens = &TokenUsage{Prompt: prompt, Completion: completion}
+			}
+		}
+
+		if requests == 0 && jobs == 0 && procTime == 0 && tokens == nil {
 			continue // no data for this service type
 		}
-		out.Usage = append(out.Usage, *svc)
+
+		rlVal, rlTTL := p2c.rl.read()
+		trlVal, _ := p2c.trl.read()
+		ptrlVal, _ := p2c.ptrl.read()
+		window := s.buildWindowUsage(svcType, ut, rlVal, trlVal, ptrlVal, rlTTL)
+
+		var modelUsages []ModelUsage
+		for _, mc := range p2c.models {
+			mTokens, mTTL := mc.counter.read()
+			if mu := s.buildModelUsage(mc.model, mc.budgetKey, ut, mTokens, mTTL); mu != nil {
+				modelUsages = append(modelUsages, *mu)
+			}
+		}
+
+		out.Usage = append(out.Usage, ServiceUsage{
+			ServiceType: svcType,
+			Total: TotalUsage{
+				Requests:       requests,
+				Jobs:           jobs,
+				ProcessingTime: procTime,
+				Tokens:         tokens,
+			},
+			Window:   window,
+			Models:   modelUsages,
+			UserType: ut,
+		})
 	}
 	return out, nil
 }
 
-func (s *redisUsageStore) getServiceUsage(ctx context.Context, consumer, userType, svcType string, models []string) (*ServiceUsage, error) {
-	// The tier actually recorded for this consumer+service (from real requests,
-	// via UsageTracker.TrackUserType) takes precedence over the userType
-	// resolved from the current /usage request's own identity: a consumer can
-	// hold a different role/tier per service, so the caller's own tier does not
-	// necessarily apply to every service type being reported on.
-	effectiveUserType := userType
-	if tracked, ok := s.resolveTrackedUserType(ctx, consumer, svcType); ok {
-		effectiveUserType = tracked
-	}
-	userType = effectiveUserType
-
-	requests, _ := s.zscore(ctx, "usage:consumer:"+svcType+":requests", consumer)
-	jobs, _ := s.zscore(ctx, "usage:consumer:"+svcType+":jobs", consumer)
-	procTime, _ := s.zscoref(ctx, "usage:consumer:"+svcType+":processing_time", consumer)
-
-	// LLM tokens come from the existing ConsumerTracker sorted sets.
-	var tokens *TokenUsage
-	if svcType == "llm" {
-		prompt, _ := s.zscore(ctx, "llm:consumer:tokens:"+userType+":prompt", consumer)
-		completion, _ := s.zscore(ctx, "llm:consumer:tokens:"+userType+":completion", consumer)
-		if prompt > 0 || completion > 0 {
-			tokens = &TokenUsage{Prompt: prompt, Completion: completion}
-		}
-	}
-
-	// Generic (non-LLM-proxy) tokens come from the UsageTracker.TrackTokens sorted
-	// sets. Only consulted when the "llm" branch above found nothing, so the two
-	// key formats never both contribute to the same response.
-	if tokens == nil {
-		promptGeneric, _ := s.zscore(ctx, "usage:consumer:"+svcType+":tokens:prompt", consumer)
-		completionGeneric, _ := s.zscore(ctx, "usage:consumer:"+svcType+":tokens:completion", consumer)
-		if promptGeneric > 0 || completionGeneric > 0 {
-			tokens = &TokenUsage{Prompt: promptGeneric, Completion: completionGeneric}
-		}
-	}
-
-	// Skip service types with no recorded data.
-	if requests == 0 && jobs == 0 && procTime == 0 && tokens == nil {
-		return nil, nil
-	}
-
-	total := TotalUsage{
-		Requests:       requests,
-		Jobs:           jobs,
-		ProcessingTime: procTime,
-		Tokens:         tokens,
-	}
-
-	window := s.getWindowUsage(ctx, consumer, userType, svcType)
-
-	var modelUsages []ModelUsage
-	for _, model := range models {
-		if mu := s.getModelUsage(ctx, consumer, userType, model); mu != nil {
-			modelUsages = append(modelUsages, *mu)
-		}
-	}
-
-	return &ServiceUsage{
-		ServiceType: svcType,
-		Total:       total,
-		Window:      window,
-		Models:      modelUsages,
-		UserType:    userType,
-	}, nil
-}
-
-// resolveTrackedUserType reads back the tier consumer was actually evaluated
-// under for svcType, recorded by UsageTracker.TrackUserType at real-request
-// time. Returns ok=false when no such record exists yet (e.g. no request to
-// this service has ever been made), in which case callers should fall back to
-// the userType resolved from the current request's own identity.
-func (s *redisUsageStore) resolveTrackedUserType(ctx context.Context, consumer, svcType string) (string, bool) {
-	val, err := s.rdb.HGet(ctx, "usage:consumer:"+svcType+":usertype", consumer).Result()
-	if err != nil || val == "" {
-		return "", false
-	}
-	return val, true
-}
-
-// getWindowUsage reads rate-limit window counters for this consumer+service,
-// alongside the configured quota (from rate_limits) it's measured against.
-// Returns nil when there's neither window data nor a configured quota to show.
-func (s *redisUsageStore) getWindowUsage(ctx context.Context, consumer, userType, svcType string) *WindowUsage {
-	rlKey := fmt.Sprintf("rl:%s:%s:%s", consumer, svcType, userType)
-	trlKey := fmt.Sprintf("trl:%s:%s:%s", consumer, svcType, userType)
-	ptrlKey := fmt.Sprintf("ptrl:%s:%s:%s", consumer, svcType, userType)
-
-	rlVal, rlTTL := s.getIntWithTTL(ctx, rlKey)
-	trlVal, _ := s.getIntWithTTL(ctx, trlKey)
-	ptrlVal, _ := s.getIntWithTTL(ctx, ptrlKey)
-
+// buildWindowUsage assembles the rate-limit window block from pre-fetched
+// counter values alongside the configured quota (from rate_limits) usage is
+// measured against. Returns nil when there's neither window data nor a
+// configured quota to show. Pure: no Redis I/O.
+func (s *redisUsageStore) buildWindowUsage(svcType, userType string, rlVal, trlVal, ptrlVal int64, rlTTL time.Duration) *WindowUsage {
 	rlCfg, hasQuota := s.resolveRateLimitConfig(svcType, userType)
 	// rate/token_rate/processing_time of 0 is the documented sentinel for "no
 	// limit" (see ratelimit.Check/CheckTokens/CheckProcessingTime), under which
 	// the matching Redis counter is never written. Track per-dimension whether
 	// a limit is actually enforced, rather than just "does a RateLimitConfig
-	// entry exist at all", so an unlimited dimension neither counts toward
-	// "is there anything to show" nor gets a *_period with no matching *_limit.
+	// entry exist at all", so an unlimited dimension neither counts toward "is
+	// there anything to show" nor gets a *_period with no matching *_limit.
 	hasRequestQuota := hasQuota && rlCfg.Rate > 0
 	hasTokenQuota := hasQuota && rlCfg.TokenRate > 0
 	hasProcTimeQuota := hasQuota && rlCfg.ProcessingTime > 0
@@ -270,22 +357,12 @@ func (s *redisUsageStore) getWindowUsage(ctx context.Context, consumer, userType
 	return w
 }
 
-// getModelUsage reads the per-model token window counter (trl:{consumer}:model:{model}:{userType},
-// written by ratelimit.Limiter.AddModelTokens) alongside the configured
-// per-model quota (services[].token_limits). Returns nil when there's neither
-// window data nor a configured quota for this model.
-func (s *redisUsageStore) getModelUsage(ctx context.Context, consumer, userType, model string) *ModelUsage {
-	// The counter is keyed by the budget key (the shared group when configured,
-	// else the model name) so grouped aliases report the shared total, not 0.
-	s.mu.RLock()
-	budgetKey := s.budgetKeys[model]
-	s.mu.RUnlock()
-	if budgetKey == "" {
-		budgetKey = model
-	}
-	key := fmt.Sprintf("trl:%s:model:%s:%s", consumer, budgetKey, userType)
-	tokens, ttl := s.getIntWithTTL(ctx, key)
-
+// buildModelUsage assembles a per-model token-window row from a pre-fetched
+// counter value alongside the configured per-model quota (services[].token_limits).
+// budgetKey is the counter's budget key (the shared group when configured, else
+// the model name). Returns nil when there's neither window data nor a configured
+// quota for this model. Pure: no Redis I/O.
+func (s *redisUsageStore) buildModelUsage(model, budgetKey, userType string, tokens int64, ttl time.Duration) *ModelUsage {
 	cfg, hasQuota := s.resolveModelLimitConfig(model, userType)
 	hasTokenQuota := hasQuota && cfg.TokenRate > 0
 	if tokens == 0 && !hasTokenQuota {
@@ -387,24 +464,20 @@ func (s *redisUsageStore) GetUsageReport(ctx context.Context, serviceType, perio
 
 // helpers
 
-func (s *redisUsageStore) zscore(ctx context.Context, key, member string) (int64, error) {
-	f, err := s.rdb.ZScore(ctx, key, member).Result()
-	if err != nil {
-		return 0, err
-	}
-	return int64(f), nil
+// intTTL holds the pipelined GET + TTL commands for a single integer counter,
+// read back together after the pipeline executes.
+type intTTL struct {
+	get *redis.StringCmd
+	ttl *redis.DurationCmd
 }
 
-func (s *redisUsageStore) zscoref(ctx context.Context, key, member string) (float64, error) {
-	return s.rdb.ZScore(ctx, key, member).Result()
-}
-
-func (s *redisUsageStore) getIntWithTTL(ctx context.Context, key string) (int64, time.Duration) {
-	val, err := s.rdb.Get(ctx, key).Result()
+// read returns the parsed counter value and its TTL. A missing key reads as
+// (0, 0): the TTL is only meaningful when the GET succeeded.
+func (c intTTL) read() (int64, time.Duration) {
+	val, err := c.get.Result()
 	if err != nil {
 		return 0, 0
 	}
 	n, _ := strconv.ParseInt(val, 10, 64)
-	ttl, _ := s.rdb.TTL(ctx, key).Result()
-	return n, ttl
+	return n, c.ttl.Val()
 }
