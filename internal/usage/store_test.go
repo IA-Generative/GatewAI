@@ -755,3 +755,33 @@ func TestGetConsumerUsage_MultiServiceType_NoCrossWiring(t *testing.T) {
 		t.Errorf("audio should have no models, got %+v", audio.Models)
 	}
 }
+
+// TestGetConsumerUsage_EmptyTypeWithQuotaIsSkipped documents (and guards the
+// phase-2 gating optimization for) the rule that a service type with zero
+// cumulative usage is omitted entirely — even when a quota is configured for
+// it. Only the live window counter being zero (with nonzero cumulative usage,
+// see TestGetConsumerUsage_QuotaIncludedEvenWhenUsageZero) surfaces a
+// quota-only window.
+func TestGetConsumerUsage_EmptyTypeWithQuotaIsSkipped(t *testing.T) {
+	rateLimits := map[string]map[string]config.RateLimitConfig{
+		"audio": {"*": {Rate: 100, Period: "1m"}},
+	}
+	store, _, rdb := newStoreWithLimits(t, "", rateLimits)
+	ctx := context.Background()
+
+	// Only "llm" has data; "audio" has a configured quota but no cumulative usage.
+	rdb.ZIncrBy(ctx, "usage:consumer:llm:requests", 2, "alice")
+
+	result, err := store.GetConsumerUsage(ctx, "alice", "*", []string{"llm", "audio"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, su := range result.Usage {
+		if su.ServiceType == "audio" {
+			t.Errorf("audio has zero cumulative usage and must be skipped despite its quota; got %+v", su)
+		}
+	}
+	if len(result.Usage) != 1 || result.Usage[0].ServiceType != "llm" {
+		t.Errorf("expected only llm in usage, got %+v", result.Usage)
+	}
+}

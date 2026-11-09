@@ -191,12 +191,41 @@ func (s *redisUsageStore) GetConsumerUsage(ctx context.Context, consumer, userTy
 		ptrl      intTTL
 		models    []modelCmd
 	}
+	// Snapshot the budget key for every model once under a single RLock, rather
+	// than taking the lock per model inside the build loop below.
+	budgetKeyFor := make(map[string]string)
+	s.mu.RLock()
+	for _, svcType := range serviceTypes {
+		for _, model := range modelsByType[svcType] {
+			bk := s.budgetKeys[model] // the shared group when configured, else the model name
+			if bk == "" {
+				bk = model
+			}
+			budgetKeyFor[model] = bk
+		}
+	}
+	s.mu.RUnlock()
+
+	// hasPhase1Data reports whether phase 1 already found any usage for a
+	// service type (requests/jobs/processing_time or generic tokens).
+	hasPhase1Data := func(svcType string) bool {
+		c := p1svc[svcType]
+		return int64(c.requests.Val()) != 0 || int64(c.jobs.Val()) != 0 ||
+			c.procTime.Val() != 0 || int64(c.genPrompt.Val()) != 0 || int64(c.genComp.Val()) != 0
+	}
+
 	p2 := s.rdb.Pipeline()
 	getIntTTL := func(key string) intTTL {
 		return intTTL{get: p2.Get(ctx, key), ttl: p2.TTL(ctx, key)}
 	}
 	p2svc := make(map[string]*phase2Svc, len(serviceTypes))
 	for _, svcType := range serviceTypes {
+		// A non-llm service type with no phase-1 data is skipped during assembly
+		// regardless of its window/model counters, so don't queue phase-2 reads
+		// we'd only discard. LLM tokens live in phase 2, so llm is always queued.
+		if svcType != "llm" && !hasPhase1Data(svcType) {
+			continue
+		}
 		ut := effUserType[svcType]
 		c := &phase2Svc{
 			rl:   getIntTTL(fmt.Sprintf("rl:%s:%s:%s", consumer, svcType, ut)),
@@ -209,15 +238,7 @@ func (s *redisUsageStore) GetConsumerUsage(ctx context.Context, consumer, userTy
 			c.llmComp = p2.ZScore(ctx, "llm:consumer:tokens:"+ut+":completion", consumer)
 		}
 		for _, model := range modelsByType[svcType] {
-			// The counter is keyed by the budget key (the shared group when
-			// configured, else the model name) so grouped aliases report the
-			// shared total, not 0.
-			s.mu.RLock()
-			budgetKey := s.budgetKeys[model]
-			s.mu.RUnlock()
-			if budgetKey == "" {
-				budgetKey = model
-			}
+			budgetKey := budgetKeyFor[model]
 			c.models = append(c.models, modelCmd{
 				model:     model,
 				budgetKey: budgetKey,
