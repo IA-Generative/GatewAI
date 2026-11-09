@@ -18,6 +18,15 @@ Versioning: each component is versioned independently — see tag conventions be
 
 ### [Unreleased]
 
+### [v0.27.0] — 2026-11-09
+
+Gateway `v0.27.0` · Relay `v0.13.1` · Chart `0.27.0`.
+
+#### Changed
+
+- **Usage reporting is now pipelined.** `GetConsumerUsage` (behind `GET /usage` and the admin `GET /-/usage`) was rebuilt from ~90 serial Redis round trips per consumer to two pipelined round trips, with phase-2 reads skipped for empty non-LLM service types and budget keys snapshotted once. Response shape is unchanged. On the admin path this collapses the per-request Redis cost from thousands of round trips to a few dozen (#223).
+- **Dependency bumps.** Gateway and relay Go modules updated to their latest minor/patch releases (Dependabot groups, #213/#214/#222/#221); CI Actions bumped (#208–#212, #215–#219). Images rebuilt on the current Go 1.27 patch toolchain, clearing the stdlib CVEs fixed since the `v0.26.0` build.
+
 ### [v0.26.0] — 2026-10-22
 
 #### Changed
