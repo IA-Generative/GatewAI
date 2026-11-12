@@ -17,7 +17,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # ── Extract version from tag (relay/v0.4.0 → v0.4.0) ──────────────────
       - name: Extract version
