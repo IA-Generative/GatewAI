@@ -101,6 +101,7 @@ Gateway (:8080)
 ```
 
 **Async crash recovery (lease + reaper)**: on `BLMOVE` the relay writes a per-job lease `relay:<model>:lease:<id>` (config `lease_ttl`, default 60s) and refreshes it every `lease_ttl/3` while processing; `Done` deletes it. If the relay pod dies mid-job the lease expires and the gateway GC's reaper (`ReapOrphanedProcessingJobs`, phase 0 of `runGC`) requeues the abandoned `relay:<model>:processing` entry to `pending` — atomically re-checking the lease (Lua) so a live worker's job is never touched, and idempotently across replicas. After `lifecycle.gc.max_reap_attempts` requeues (default 3) the job is dead-lettered to `relay:<model>:deadletter` and marked failed. Metric: `gatewai_async_jobs_reaped_total{model, outcome}`.
+**Raw-body async jobs (`input_mode: raw`)**: for `input_adapter` services the gateway stores the pre-built chat-completions JSON in S3 and sets `input_mode: raw` on the job; the relay POSTs it verbatim (JSON, not multipart). Internal/automatic — no relay config. Async token usage is read from the backend `usage` block at completion (feeds `token_limits`).
 **Durable webhooks** (`internal/consumer/webhook.go` + `webhook_retry.go`): `Send` makes one inline delivery attempt; on failure (5xx/network) the retry is persisted to Redis (ZSET `webhook:retries` + per-job task key `webhook:retry:{id}`) and worked by `RunRetryLoop` with exponential backoff (`webhooks.retry_backoff`→`max_backoff`), so a gateway restart never drops pending retries. Claims are atomic (Lua, visibility-timeout) so the 2 replicas don't double-send. After `webhooks.max_retries` (default 3) attempts the webhook is dead-lettered to `webhook:deadletter`. Metrics: `gatewai_webhook_deliveries_total{result}`, `gatewai_webhook_retry_queue_depth`. When `webhooks.signing_secret` is set, each delivery carries `X-Gatewai-Signature: t=<unix>,v1=HMAC-SHA256(secret,"<t>.<body>")` for authenticity + replay protection.
 **Idempotency** (async submit): `POST /jobs/{type}` honours an optional `Idempotency-Key` header. The key is reserved in Redis (`idem:{consumer}:{key}`, SETNX, `jobs.idempotency_ttl` default 24h) against the new job's ID just before `SaveJob`; a repeat with the same key returns the original job (`200` + `X-Idempotent-Replay: true`) instead of a duplicate inference, or `409` if that job is gone. Metric `gatewai_idempotency_requests_total{service_type, outcome}`.
 
@@ -151,6 +152,25 @@ operations:
 **Multiple models per type**: multiple service entries may share the same `type` with different `model` values. The gateway routes by `model` field in the request.
 
 **`visibility`** (`services[].visibility`): gates a model to an audience — `user_types` (matched against `server.user_type_header`) and/or `groups` (from the authed `Principal`). A restricted model is fail-closed: filtered out of `GET /v1/models` and returns `404` on `/v1/*`, `/jobs/{service_type}`, and `GET /v1/models?model=` for callers outside its audience (indistinguishable from non-existent; anonymous callers see only public models). Enforced in `handler.checkModelVisible` on all three paths and as a list filter in `ListModels`. Enables beta-testing a model through the same API. Composes with `policies` (both must pass). Metric `gatewai_model_hidden_total{service_type, model}`. Registry helpers: `Def.IsRestricted()`, `Def.VisibleTo(userType, groups)`, `Def.BackendModelNames()`.
+
+**`input_adapter`** (`services[].input_adapter`): generic config-driven stage turning a multipart upload into an OpenAI chat-completions JSON body, then handing off to the existing JSON/provider pipeline — so `token_limits`, response cache, guardrails and metrics apply unchanged, with no per-model code. Type `multipart_to_chat`: file → base64 `data:<content-type>;base64,...` `image_url` in one user message, plus a text prompt. Works on sync (`POST /v1/*` multipart) and async (`POST /jobs/{type}`). Serves chat-only backends (vision/OCR).
+
+```yaml
+input_adapter:
+  type: multipart_to_chat
+  prompt_field: prompt              # client form field → user text
+  default_prompt: "document parsing."   # when field absent/empty
+  max_tokens_field: max_tokens      # optional client form field
+  max_tokens_default: 4096
+  max_tokens_cap: 8192              # clamp; 0 = no cap
+  extra_json_fields: { skip_special_tokens: false, temperature: 0 }   # merged top-level
+```
+
+- **Requires** `provider` set and a `/v1/chat/completions` operation path — config load fails otherwise.
+- Sync upload bounded by `services[].max_file_size_mb` (not `server.max_body_mb`); oversize → `413`.
+- Async: gateway stores the transformed JSON in S3 and the relay posts it verbatim (`input_mode: raw`); no operator relay config. Per-consumer `token_limits` apply sync and async (async usage read from backend `usage` at completion).
+- **Scope**: one file → one chat request. No PDF handling, multi-page expansion or file conversion in the gateway (deliberate, dependency-free).
+- Caveat: input-stage regex guardrails would scan the base64 blob — don't enable body-regex guardrails on adapter services; use output/async stages.
 
 **`backend_pools`** (top-level config block): a named, load-balancer-style group of member backends, referenced from `services[]` by name via `backend_pool: <name>` — instead of every service declaring its own `backends:`/`inference_url:`. Lets several service/model aliases share one physical backend's config, rate limit, and concurrency budget.
 

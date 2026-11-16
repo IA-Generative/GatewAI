@@ -388,6 +388,7 @@ services:
 | `response_cache_ttl` | no | `0` | Redis response cache TTL in seconds; `0` = disabled |
 | `max_concurrent_sync` | no | `0` | Max simultaneous sync requests for this model across all replicas; `0` = unlimited. Returns `503` when full. |
 | `priority_reserved_sync` | no | `0` | Slots of `max_concurrent_sync` reserved for requests carrying `server.priority_header` — see [Service registry](../configure/service-registry#reserving-capacity-for-priority-requests-priority_reserved_sync) |
+| `input_adapter` | no | none | Converts a multipart upload into a chat-completions JSON request (`type: multipart_to_chat`), sync and async. Requires `provider` and a `/v1/chat/completions` operation — see [Input adapter](../configure/service-registry#input-adapter-input_adapter) |
 | `token_limits` | no | `{}` | Per-user-type token budgets for LLM requests — see [Rate limiting](../configure/rate-limiting#token-budget-limiting) |
 | `swagger_url` | no | `""` | URL to fetch an OpenAPI spec from |
 | `swagger_headers` | no | `{}` | HTTP headers for `swagger_url` fetch |

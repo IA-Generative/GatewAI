@@ -51,7 +51,7 @@ Gateway (:8080)
 | Parameter | Description | Default |
 |---|---|---|
 | `image.repository` | Gateway image | `ghcr.io/ia-generative/gatewai/gateway` |
-| `image.tag` | Image tag | `v0.20.0` |
+| `image.tag` | Image tag | `v0.28.0` |
 | `image.pullPolicy` | Pull policy | `IfNotPresent` |
 
 ### Config

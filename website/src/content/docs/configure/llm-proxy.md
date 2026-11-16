@@ -8,6 +8,8 @@ The gateway includes a built-in LLM proxy that forwards JSON requests to any Ope
 
 Activated per service by setting `provider` in `config.yaml`. When `provider` is set, JSON requests to that service's paths go through the proxy instead of the bare direct-proxy.
 
+Multipart file uploads can enter this pipeline too: set an [`input_adapter`](service-registry.md#input-adapter-input_adapter) on the service and the upload is converted to a chat-completions JSON body (sync and async), so caching, token quota and guardrails apply as for any JSON request.
+
 ## Request flow
 
 ```

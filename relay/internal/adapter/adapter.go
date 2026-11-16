@@ -19,6 +19,7 @@ type CallInput struct {
 	Model        string            // model name from InputEvent (e.g. "whisper-large-v3")
 	InferenceURL string            // OpenAI path from InputEvent (e.g. "/v1/audio/transcriptions")
 	Params       map[string]string // extra form fields forwarded from the client request
+	InputMode    string            // "raw" = post Body verbatim; empty/"multipart" = multipart form
 }
 
 // Adapter sends an inference request to the local model and returns the raw JSON response.
@@ -26,11 +27,28 @@ type Adapter interface {
 	Call(ctx context.Context, input CallInput) ([]byte, error)
 }
 
-// New returns the single multipart adapter backed by cfg.Inference.
+// InputModeRaw posts the stored input object verbatim; any other value uses multipart.
+const InputModeRaw = "raw"
+
+// dispatchAdapter picks the adapter per job from CallInput.InputMode.
+type dispatchAdapter struct {
+	multipart Adapter
+	raw       Adapter
+}
+
+func (d *dispatchAdapter) Call(ctx context.Context, input CallInput) ([]byte, error) {
+	if input.InputMode == InputModeRaw {
+		return d.raw.Call(ctx, input)
+	}
+	return d.multipart.Call(ctx, input)
+}
+
+// New returns an adapter that uses multipart by default and raw for input_mode "raw".
 func New(cfg *config.Config) (Adapter, error) {
-	return &multipartAdapter{
-		inf:    cfg.Inference,
-		client: &http.Client{Timeout: cfg.Inference.TimeoutDuration()},
+	client := &http.Client{Timeout: cfg.Inference.TimeoutDuration()}
+	return &dispatchAdapter{
+		multipart: &multipartAdapter{inf: cfg.Inference, client: client},
+		raw:       &rawAdapter{inf: cfg.Inference, client: client},
 	}, nil
 }
 

@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/ia-generative/gatewai/gateway
-  tag: "v0.27.0"
+  tag: "v0.28.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -250,6 +250,14 @@ services:
   #       - "/v1/chat/completions"
   #   backendPool: vllm-llama3   # see the backendPools example above — replaces the deprecated inline backends: list
   #   budgetGroup: "gpt-4o-pool" # optional: share the token budget with other aliases on this backend
+  #   inputAdapter:              # optionnel : convertit un upload multipart en requête chat (ex. OCR via un modèle chat)
+  #     type: multipart_to_chat
+  #     promptField: prompt
+  #     defaultPrompt: "document parsing."
+  #     maxTokensField: max_tokens
+  #     maxTokensDefault: 4096
+  #     maxTokensCap: 8192
+  #     extraJsonFields: { skip_special_tokens: false, temperature: 0 }
   #   tokenLimits:
   #     premium:
   #       tokenRate: 500000

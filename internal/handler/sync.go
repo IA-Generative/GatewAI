@@ -211,8 +211,22 @@ func (h *SyncHandler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 	// straight to the backend. Only multi-model paths need the "model" field and
 	// are parsed.
 	def, streamable := h.registry.ResolveSyncByPath(r.URL.Path)
+	if streamable && def.InputAdapter != nil {
+		h.handleAdapted(w, r, def)
+		return
+	}
 	if !streamable {
+		if mb, ok := h.registry.AdapterUploadLimitMB(r.URL.Path); ok && mb > 0 {
+			// Adapted uploads are buffered whole (and base64-copied), so bound them
+			// before parsing; the target model isn't known yet, hence the path max.
+			r.Body = http.MaxBytesReader(w, r.Body, mb<<20+1<<20)
+		}
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				writeError(w, http.StatusRequestEntityTooLarge, "upload exceeds max_file_size_mb")
+				return
+			}
 			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 			return
 		}
@@ -229,6 +243,12 @@ func (h *SyncHandler) handleMultipart(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+	}
+
+	if def.InputAdapter != nil {
+		// Multi-model path: form already parsed above; the adapter re-enters the JSON path.
+		h.handleAdapted(w, r, def)
+		return
 	}
 
 	if !checkModelVisible(w, r, def, h.userTypeHeader) {
@@ -326,6 +346,71 @@ func (h *SyncHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 {
 		limit = defaultMaxBodyBytes
 	}
+	h.handleJSONLimit(w, r, limit)
+}
+
+// handleAdapted converts a multipart upload into a JSON body via the service's
+// input_adapter and runs it through the normal JSON/provider pipeline. The
+// synthesized body is base64 (~33% larger than the file) and bounded by
+// max_file_size_mb rather than server.max_body_mb, so the JSON cap is sized to it.
+func (h *SyncHandler) handleAdapted(w http.ResponseWriter, r *http.Request, def *service.Def) {
+	if def.MaxFileSizeMB > 0 {
+		// Slack for multipart framing and the non-file form fields.
+		r.Body = http.MaxBytesReader(w, r.Body, def.MaxFileSizeMB<<20+1<<20)
+	}
+	if r.MultipartForm == nil {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				writeError(w, http.StatusRequestEntityTooLarge, "upload exceeds max_file_size_mb")
+				return
+			}
+			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
+			return
+		}
+	}
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "field 'file' is required")
+		return
+	}
+	defer file.Close()
+	if err := h.registry.ValidateFileDef(def, header.Filename); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read file: "+err.Error())
+		return
+	}
+	params := make(map[string]string, len(r.MultipartForm.Value))
+	for k, v := range r.MultipartForm.Value {
+		if len(v) > 0 {
+			params[k] = v[0]
+		}
+	}
+	body, err := def.InputAdapter.Transform(fileBytes, header.Header.Get("Content-Type"), def.Model, params)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build request: "+err.Error())
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	// The provider forwards to baseURL+r.URL.Path; the body is chat JSON whatever
+	// path the upload used.
+	r.URL.Path = def.ChatCompletionsPath()
+	h.handleJSONLimit(w, r, int64(len(body))+1)
+}
+
+func (h *SyncHandler) handleJSONLimit(w http.ResponseWriter, r *http.Request, limit int64) {
 	// MaxBytesReader rejects oversized bodies with a typed error instead of
 	// silently truncating (as io.LimitReader would), so a too-large request —
 	// e.g. a base64 image on the vision path — gets a clean 413 rather than a
