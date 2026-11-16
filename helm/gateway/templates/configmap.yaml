@@ -291,6 +291,31 @@ data:
         {{- if .provider }}
         provider:          {{ .provider | quote }}
         {{- end }}
+        {{- if .inputAdapter }}
+        input_adapter:
+          {{- if .inputAdapter.type }}
+          type: {{ .inputAdapter.type | quote }}
+          {{- end }}
+          {{- if .inputAdapter.promptField }}
+          prompt_field: {{ .inputAdapter.promptField | quote }}
+          {{- end }}
+          {{- if .inputAdapter.defaultPrompt }}
+          default_prompt: {{ .inputAdapter.defaultPrompt | quote }}
+          {{- end }}
+          {{- if .inputAdapter.maxTokensField }}
+          max_tokens_field: {{ .inputAdapter.maxTokensField | quote }}
+          {{- end }}
+          {{- if .inputAdapter.maxTokensDefault }}
+          max_tokens_default: {{ .inputAdapter.maxTokensDefault }}
+          {{- end }}
+          {{- if .inputAdapter.maxTokensCap }}
+          max_tokens_cap: {{ .inputAdapter.maxTokensCap }}
+          {{- end }}
+          {{- if .inputAdapter.extraJsonFields }}
+          extra_json_fields:
+            {{- toYaml .inputAdapter.extraJsonFields | nindent 12 }}
+          {{- end }}
+        {{- end }}
         {{- if .backendModel }}
         backend_model:     {{ .backendModel | quote }}
         {{- end }}

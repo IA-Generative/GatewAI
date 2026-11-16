@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"gatewai/gateway/internal/inputadapter"
 	"gatewai/gateway/internal/telemetry"
 )
 
@@ -567,6 +568,10 @@ type ServiceConfig struct {
 	// "*" acts as fallback when the user_type_header is absent or unmatched.
 	// Applied independently from rate_limits; both can reject the same request.
 	TokenLimits map[string]RateLimitConfig `yaml:"token_limits"`
+	// InputAdapter converts a multipart file upload into the backend's request body
+	// (e.g. an OpenAI chat-completions JSON) before the normal pipeline runs.
+	// Requires provider and a chat-completions operation. Nil = plain passthrough.
+	InputAdapter *inputadapter.Config `yaml:"input_adapter,omitempty"`
 	// Health controls backend probing for this service (GET /health?verbose=true).
 	Health ServiceHealthConfig `yaml:"health"`
 	// Deprecated marks this model as deprecated: surfaced in GET /v1/models
@@ -1018,6 +1023,25 @@ func (c *Config) validate() error {
 			}
 			if _, ok := c.BackendPools[svc.BackendPool]; !ok {
 				return fmt.Errorf("service %q: backend_pool %q is not defined in backend_pools", svc.Type, svc.BackendPool)
+			}
+		}
+		if svc.InputAdapter != nil {
+			if err := svc.InputAdapter.Validate(); err != nil {
+				return fmt.Errorf("service %q: %w", svc.Type, err)
+			}
+			if svc.Provider == "" {
+				return fmt.Errorf("service %q: input_adapter requires provider to be set", svc.Type)
+			}
+			hasChat := false
+			for _, paths := range svc.Operations {
+				for _, p := range paths {
+					if strings.HasSuffix(p, inputadapter.ChatCompletionsSuffix) {
+						hasChat = true
+					}
+				}
+			}
+			if !hasChat {
+				return fmt.Errorf("service %q: input_adapter %q requires an operation path ending in %s", svc.Type, svc.InputAdapter.Type, inputadapter.ChatCompletionsSuffix)
 			}
 		}
 		for userType, limit := range svc.TokenLimits {

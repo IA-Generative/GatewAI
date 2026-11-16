@@ -6,11 +6,13 @@ package service
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"gatewai/gateway/internal/config"
 	"gatewai/gateway/internal/guardrails"
+	"gatewai/gateway/internal/inputadapter"
 )
 
 // GuardrailsStage is the resolved guardrails configuration for a single pipeline stage.
@@ -85,6 +87,7 @@ type Def struct {
 	HealthCheck      config.ServiceHealthConfig
 	Deprecated       bool                    // informational: surfaced in /v1/models and OpenAPI specs
 	Visibility       config.VisibilityConfig // audience gate; empty = public
+	InputAdapter     *inputadapter.Config    // multipart→backend body adapter; nil = passthrough
 	Realtime         *RealtimeSpec           // resolved WebSocket streaming config; nil = not a realtime service
 }
 
@@ -169,6 +172,24 @@ func (d *Def) OperationPath(op string) (string, error) {
 		return "", fmt.Errorf("operation %q has no paths configured for model %q", op, d.Model)
 	}
 	return paths[0], nil
+}
+
+// ChatCompletionsPath returns the first configured operation path ending in
+// /v1/chat/completions (deterministic across operations), or "" if none.
+func (d *Def) ChatCompletionsPath() string {
+	names := make([]string, 0, len(d.Operations))
+	for n := range d.Operations {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		for _, p := range d.Operations[n] {
+			if strings.HasSuffix(p, inputadapter.ChatCompletionsSuffix) {
+				return p
+			}
+		}
+	}
+	return ""
 }
 
 // IsLLM reports whether this service uses the LLM proxy handler.
@@ -509,6 +530,7 @@ func NewRegistry(cfgs []config.ServiceConfig, opts ...RegistryOption) *Registry 
 			HealthCheck:          cfg.Health,
 			Deprecated:           cfg.Deprecated,
 			Visibility:           cfg.Visibility,
+			InputAdapter:         cfg.InputAdapter,
 			Realtime:             resolveRealtime(cfg.Realtime),
 		}
 
@@ -811,6 +833,24 @@ func (r *Registry) ResolveSyncByPath(openaiPath string) (*Def, bool) {
 		}
 	}
 	return nil, false
+}
+
+// AdapterUploadLimitMB returns the largest MaxFileSizeMB among models served on
+// an exact sync path that use an input_adapter, and whether any does. Used to bound
+// the multi-model multipart read before the target model is known.
+func (r *Registry) AdapterUploadLimitMB(openaiPath string) (int64, bool) {
+	var max int64
+	found := false
+	for _, d := range r.bySync[openaiPath] {
+		if d.InputAdapter == nil {
+			continue
+		}
+		found = true
+		if d.MaxFileSizeMB > max {
+			max = d.MaxFileSizeMB
+		}
+	}
+	return max, found
 }
 
 // HasSyncServices reports whether at least one service has sync mode configured.

@@ -30,7 +30,10 @@ type Job struct {
 	CallbackURL  string            `json:"callback_url,omitempty"`
 	InferenceURL string            `json:"inference_url,omitempty"`
 	Params       map[string]string `json:"params,omitempty"`
-	ConsumerName string            `json:"consumer_name,omitempty"` // set from configurable HTTP header (e.g. X-Consumer-Username)
+	// InputMode "raw" means the S3 input object is the final request body, to be
+	// POSTed verbatim with its stored content-type. Empty = multipart (default).
+	InputMode    string `json:"input_mode,omitempty"`
+	ConsumerName string `json:"consumer_name,omitempty"` // set from configurable HTTP header (e.g. X-Consumer-Username)
 	// UserType is the value of server.user_type_header at submission time ("*" when absent).
 	// Persisted so the consumer can call DecrConcurrent/AddProcessingTime without the original request.
 	UserType string `json:"user_type,omitempty"`

@@ -252,6 +252,7 @@ func (p *Processor) runInference(ctx context.Context, job *model.Job, body io.Re
 		Model:        job.Model,
 		InferenceURL: job.InferenceURL,
 		Params:       job.Params,
+		InputMode:    job.InputMode,
 	})
 	metrics.InferenceDuration.WithLabelValues(job.ServiceType, job.Model).Observe(time.Since(inferStart).Seconds())
 	return result, err
