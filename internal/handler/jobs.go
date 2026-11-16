@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -355,8 +356,11 @@ func (h *JobHandler) Submit(w http.ResponseWriter, r *http.Request) {
 
 	// Validate the operation before touching S3 or Redis.
 	operation := r.FormValue("operation")
-	inferenceURL, err := def.OperationPath(operation)
-	if err != nil {
+	var inferenceURL string
+	if def.InputAdapter != nil {
+		// The adapted body always targets chat completions; operation is ignored.
+		inferenceURL = def.ChatCompletionsPath()
+	} else if inferenceURL, err = def.OperationPath(operation); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -464,8 +468,34 @@ func (h *JobHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	ext := filepath.Ext(header.Filename)
 	inputRef := fmt.Sprintf("%s/input%s", jobID, ext) // e.g. "abc123/input.wav"
 
-	// Step 1 — store the file in S3.
-	if err := h.store.Upload(r.Context(), inputRef, file, header.Size, header.Header.Get("Content-Type")); err != nil {
+	// Step 1 — store the file (or its adapted request body) in S3.
+	inputMode := ""
+	if def.InputAdapter != nil {
+		// The relay POSTs this stored JSON verbatim to the chat-completions path.
+		fileBytes, rerr := io.ReadAll(file)
+		if rerr != nil {
+			writeError(w, http.StatusBadRequest, "failed to read file: "+rerr.Error())
+			return
+		}
+		body, terr := def.InputAdapter.Transform(fileBytes, header.Header.Get("Content-Type"), def.Model, params)
+		if terr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to build request: "+terr.Error())
+			return
+		}
+		chatPath := def.ChatCompletionsPath()
+		if chatPath == "" {
+			writeError(w, http.StatusInternalServerError, "service has no chat-completions operation")
+			return
+		}
+		inferenceURL = chatPath
+		inputMode = "raw"
+		inputRef = fmt.Sprintf("%s/input.json", jobID)
+		if err := h.store.Upload(r.Context(), inputRef, bytes.NewReader(body), int64(len(body)), "application/json"); err != nil {
+			slog.ErrorContext(r.Context(), "s3 upload failed", "job_id", jobID, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to store file")
+			return
+		}
+	} else if err := h.store.Upload(r.Context(), inputRef, file, header.Size, header.Header.Get("Content-Type")); err != nil {
 		slog.ErrorContext(r.Context(), "s3 upload failed", "job_id", jobID, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to store file")
 		return //nolint:nilerr
@@ -490,6 +520,7 @@ func (h *JobHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		Status:       model.JobStatusPending,
 		InputRef:     inputRef,
 		InferenceURL: inferenceURL,
+		InputMode:    inputMode,
 		Params:       params,
 		CallbackURL:  callbackURL,
 		ConsumerName: consumerName,

@@ -20,6 +20,7 @@ import (
 	"gatewai/gateway/internal/authz"
 	"gatewai/gateway/internal/config"
 	"gatewai/gateway/internal/handler"
+	"gatewai/gateway/internal/inputadapter"
 	"gatewai/gateway/internal/model"
 	"gatewai/gateway/internal/ratelimit"
 	"gatewai/gateway/internal/service"
@@ -31,12 +32,16 @@ import (
 type mockJobS3 struct {
 	uploadErr   error
 	uploaded    bool
+	uploadCT    string
+	uploadBody  []byte
 	mu          sync.Mutex
 	deletedKeys []string
 }
 
-func (m *mockJobS3) Upload(_ context.Context, _ string, _ io.Reader, _ int64, _ string) error {
+func (m *mockJobS3) Upload(_ context.Context, _ string, r io.Reader, _ int64, ct string) error {
 	m.uploaded = true
+	m.uploadCT = ct
+	m.uploadBody, _ = io.ReadAll(r)
 	return m.uploadErr
 }
 func (m *mockJobS3) GetObject(_ context.Context, _ string) ([]byte, error) { return nil, nil }
@@ -50,6 +55,7 @@ func (m *mockJobS3) DeleteObject(_ context.Context, key string) error {
 type mockAsyncStore struct {
 	saveErr         error
 	saved           bool
+	savedJob        *model.Job
 	updateCalled    bool
 	deleteJobCalled bool
 	job             *model.Job // returned by GetJob
@@ -98,8 +104,9 @@ func (m *mockAsyncStore) OverrideJobResult(_ context.Context, _ string, status m
 	return nil
 }
 
-func (m *mockAsyncStore) SaveJob(_ context.Context, _ *model.Job) error {
+func (m *mockAsyncStore) SaveJob(_ context.Context, j *model.Job) error {
 	m.saved = true
+	m.savedJob = j
 	return m.saveErr
 }
 func (m *mockAsyncStore) GetJob(_ context.Context, _ string) (*model.Job, error) {
@@ -1495,5 +1502,43 @@ func TestSubmit_ShadowAsync_NoScanGate(t *testing.T) {
 	newAsyncHandler(asyncActionRegistry("flag"), &mockJobS3{}, store).Submit(w, req)
 	if store.scanGateSet {
 		t.Error("shadow (flag) async must not arm a scan gate")
+	}
+}
+
+func TestSubmit_InputAdapter_StoresChatJSONRaw(t *testing.T) {
+	reg := service.NewRegistry([]config.ServiceConfig{{
+		Type:     "ocr",
+		Model:    "lighton-ocr",
+		Provider: "passthrough",
+		Operations: map[string][]string{
+			"ocr":   {"/v1/chat/completions"},
+			"other": {"/v1/other"},
+		},
+		AcceptedExts:  []string{".png"},
+		MaxFileSizeMB: 10,
+		InputAdapter:  &inputadapter.Config{Type: inputadapter.TypeMultipartToChat, DefaultPrompt: "parse."},
+	}})
+	s3 := &mockJobS3{}
+	store := &mockAsyncStore{}
+
+	// No operation given despite multiple operations: must not 400 for adapter services.
+	req := submitReq(t, "ocr", "lighton-ocr", "", "a.png", []byte("PNGDATA"))
+	w := httptest.NewRecorder()
+	newAsyncHandler(reg, s3, store).Submit(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+	if s3.uploadCT != "application/json" {
+		t.Errorf("S3 content-type = %q", s3.uploadCT)
+	}
+	var body struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(s3.uploadBody, &body); err != nil || body.Model != "lighton-ocr" {
+		t.Errorf("stored body is not chat JSON: %v %s", err, s3.uploadBody)
+	}
+	if store.savedJob == nil || store.savedJob.InputMode != "raw" || store.savedJob.InferenceURL != "/v1/chat/completions" {
+		t.Errorf("unexpected job: %+v", store.savedJob)
 	}
 }

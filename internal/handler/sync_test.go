@@ -20,6 +20,7 @@ import (
 	"gatewai/gateway/internal/cache"
 	"gatewai/gateway/internal/config"
 	"gatewai/gateway/internal/handler"
+	"gatewai/gateway/internal/inputadapter"
 	"gatewai/gateway/internal/llmproxy"
 	"gatewai/gateway/internal/llmproxy/provider"
 	"gatewai/gateway/internal/metrics"
@@ -1586,5 +1587,68 @@ func TestSyncHandler_NoFallback_WhenPrimaryHealthy(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(metrics.LLMFallbackTotal.WithLabelValues("llm", "chat", "chat-fb")); got != before {
 		t.Errorf("fallback must not fire for a healthy primary: %v → %v", before, got)
+	}
+}
+
+func adapterRegistry(backendURL string, models ...string) *service.Registry {
+	var cfgs []config.ServiceConfig
+	for _, m := range models {
+		cfgs = append(cfgs, config.ServiceConfig{
+			Type:     "ocr",
+			Model:    m,
+			Provider: "openai",
+			Operations: map[string][]string{
+				"ocr":    {"/v1/chat/completions"},
+				"upload": {"/v1/ocr/upload"},
+			},
+			InferenceURL:  backendURL,
+			Backends:      []config.BackendConfig{{URL: backendURL, Weight: 1}},
+			MaxFileSizeMB: 1,
+			InputAdapter:  &inputadapter.Config{Type: inputadapter.TypeMultipartToChat, DefaultPrompt: "parse."},
+		})
+	}
+	return service.NewRegistry(cfgs)
+}
+
+func TestSyncHandler_InputAdapter_SendsChatJSONToChatPath(t *testing.T) {
+	var gotPath, gotCT, gotBody string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotPath, gotCT, gotBody = r.URL.Path, r.Header.Get("Content-Type"), string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}],"usage":{}}`)
+	}))
+	defer backend.Close()
+
+	h := handler.NewSyncHandler(adapterRegistry(backend.URL, "lighton-ocr"), "", nil, buildLLMHandler(backend.URL))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, multipartRequest(t, "/v1/ocr/upload", "lighton-ocr", []byte("IMG")))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if gotPath != "/v1/chat/completions" || !strings.HasPrefix(gotCT, "application/json") {
+		t.Errorf("backend got path=%q ct=%q", gotPath, gotCT)
+	}
+	if !strings.Contains(gotBody, `"image_url"`) || !strings.Contains(gotBody, `"model":"lighton-ocr"`) {
+		t.Errorf("backend body is not adapted chat JSON: %s", gotBody)
+	}
+}
+
+func TestSyncHandler_InputAdapter_Oversize_Returns413(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("backend must not be called")
+	}))
+	defer backend.Close()
+
+	big := bytes.Repeat([]byte("x"), 3<<20) // limit is 1 MiB (+1 MiB slack)
+	// single model (streamed route) and multi-model (parsed route)
+	for _, models := range [][]string{{"a"}, {"a", "b"}} {
+		h := handler.NewSyncHandler(adapterRegistry(backend.URL, models...), "", nil, buildLLMHandler(backend.URL))
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, multipartRequest(t, "/v1/chat/completions", "a", big))
+		if w.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("%d models: expected 413, got %d: %s", len(models), w.Code, w.Body.String())
+		}
 	}
 }
