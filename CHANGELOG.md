@@ -18,6 +18,10 @@ Versioning: each component is versioned independently — see tag conventions be
 
 ### [Unreleased]
 
+### [v0.28.0] — 2026-11-16
+
+Gateway `v0.28.0` · Relay `v0.14.0` · Chart `0.28.0`.
+
 #### Added
 
 - **Generic `input_adapter` stage (`multipart_to_chat`).** A config-driven `services[].input_adapter` turns a multipart file upload into an OpenAI chat-completions JSON body (file base64-encoded into an `image_url` `data:` URL, text prompt, `max_tokens`, extra JSON fields) and hands it to the existing JSON/provider pipeline, on both sync (`POST /v1/*`) and async (`POST /jobs/{type}`). Backends that speak only `/v1/chat/completions` (vision/OCR models) can now be served without a custom route, and `token_limits`, response cache, guardrails and metrics apply unchanged — including per-consumer token quota on async jobs (usage read from the backend `usage` block at completion). Requires `provider` and a `/v1/chat/completions` operation path. Async jobs carry `input_mode: raw` and the relay posts the stored body verbatim (no relay config). One file maps to one chat request: no PDF handling or multi-page expansion in the gateway.
