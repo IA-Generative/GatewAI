@@ -59,6 +59,8 @@ On a successful dequeue the relay acquires a **processing lease** — `SET relay
 4. `POST` plaintext to `http://127.0.0.1:9000/<inference_url>` (multipart)
 5. Upload `result.json` to S3
 
+**Adapter jobs (`input_mode: raw`).** For services with an [`input_adapter`](../configure/service-registry.md#input-adapter-input_adapter), the gateway stores a pre-built chat-completions JSON body as the job input and marks the job `input_mode: raw`. The relay then `POST`s that body verbatim (as JSON, not multipart). This is internal and automatic — there is no relay-side configuration. The backend's `usage` block is read at completion, so per-consumer `token_limits` apply to these async jobs.
+
 ### 4. Complete
 
 For every finished job the relay, in order:

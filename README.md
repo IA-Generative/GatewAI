@@ -22,6 +22,7 @@ API Gateway for KServe inference services on Kubernetes — async job queue, Ope
 - Response cache (Redis, SHA-256 key, `X-Cache` header)
 - Multi-backend routing — blue/green, canary, fallback with weighted selection
 - Backend pools — share one physical backend's auth, rate limit, and concurrency budget across multiple service/model aliases
+- Input adapter — serve chat-only vision/OCR backends by converting multipart uploads into chat-completions requests, reusing the cache, quota and guardrail pipeline
 - Per-consumer rate limiting — fixed-window, per service type and user type, request + token budgets
 - PII + secrets guardrails — block / redact / flag LLM requests with PII (email, phone, IBAN, credit card, SIREN/SIRET, SSN…) or secrets (AWS keys, JWTs, GitHub tokens); optional output DLP on model responses
 - OAuth2 authentication — gateway-side access-token validation (JWT via JWKS + opaque via RFC 7662 introspection), fails closed

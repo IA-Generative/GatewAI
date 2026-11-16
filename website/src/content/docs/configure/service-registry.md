@@ -287,6 +287,52 @@ services:
 
 See the [Helm chart](../set-up/helm.md#backend-pools) for the equivalent `values.yaml` schema and the [metrics reference](../reference/metrics.md#backend-pools) for `gatewai_backend_pool_*`.
 
+## Input adapter (`input_adapter`)
+
+Some backends (vision / OCR models, for instance) speak **only** `/v1/chat/completions`. An `input_adapter` is a config-driven stage that turns a client's **multipart file upload** into an OpenAI chat-completions JSON body, then hands it to the regular JSON / [LLM proxy](llm-proxy.md) pipeline. Quota (`token_limits`), the response cache, guardrails and metrics therefore apply unchanged — no per-model code and no custom route.
+
+```yaml
+services:
+  - type: ocr
+    model: lighton-ocr
+    provider: passthrough          # REQUIRED when input_adapter is set
+    inference_url: "http://localhost:9000"
+    operations:
+      ocr:
+        - "/v1/chat/completions"   # a chat-completions path is REQUIRED
+    input_adapter:
+      type: multipart_to_chat
+      prompt_field: prompt          # client multipart form field -> user message text
+      default_prompt: "document parsing."   # used when the form field is absent/empty
+      max_tokens_field: max_tokens  # optional client form field
+      max_tokens_default: 4096
+      max_tokens_cap: 8192          # clamp; 0 = no cap
+      extra_json_fields:            # top-level JSON fields merged into the body
+        skip_special_tokens: false
+        temperature: 0
+```
+
+The uploaded file is base64-encoded into a `data:<content-type>;base64,...` `image_url` part of a single user message (the standard OpenAI vision shape), alongside the text prompt.
+
+**Requirements** — config load fails with a clear error if either is missing:
+
+- `provider` must be set (the adapter rides the provider pipeline).
+- The service must expose a `/v1/chat/completions` operation path.
+
+**Sync** (`POST /v1/*` multipart) and **async** (`POST /jobs/{type}`) are both supported:
+
+- **Sync** — the upload size is bounded by the service's `max_file_size_mb` (not `server.max_body_mb`); an oversize upload returns `413`.
+- **Async** — the gateway stores the transformed JSON in object storage and the relay posts it verbatim to the backend. This is automatic; nothing is configured on the relay (see [Relay async flow](../relay/async.md)).
+- **Per-consumer token quota** (`token_limits`) applies on both paths. For async jobs, usage is read from the backend's `usage` block at completion.
+
+:::caution
+Scope is deliberately narrow: **one uploaded file becomes one chat request.** There is no PDF handling, no multi-page expansion and no file conversion inside GatewAI — this keeps the gateway dependency-free. Convert PDFs to images client-side (or in a separate service) before uploading.
+:::
+
+:::note
+Input-stage regex [guardrails](guardrails.md), if configured on an adapter service, scan the base64 blob too — wasteful, with no useful matches. Avoid body-regex guardrails on adapter services and rely on the output / async stages instead.
+:::
+
 ## Hot reload
 
 The service registry is reloaded atomically via `POST /-/reload`. The HTTP router is swapped with the new registry. Infrastructure (S3, Redis) is not re-initialised.
