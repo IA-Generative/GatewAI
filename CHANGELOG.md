@@ -18,6 +18,14 @@ Versioning: each component is versioned independently — see tag conventions be
 
 ### [Unreleased]
 
+### [v0.28.1] — 2026-11-17
+
+Gateway `v0.28.1` · Relay `v0.14.0` · Chart `0.28.1`.
+
+#### Fixed
+
+- **`input_adapter` async path now applies `backend_model`.** On async submit (`POST /jobs/{type}`) the adapter built the chat-completions body with the client-facing model alias and never applied the service-level `backend_model`; since the relay posts that body verbatim (`input_mode: raw`), a backend that accepts only its real model name (e.g. vLLM started with `--model <name>`) returned 404. The async path now rewrites the body's `model` to `backend_model` when set, matching the sync path. The job's `relay:<model>:pending` queue key is unchanged (still the alias).
+
 ### [v0.28.0] — 2026-11-16
 
 Gateway `v0.28.0` · Relay `v0.14.0` · Chart `0.28.0`.
