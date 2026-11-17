@@ -477,7 +477,12 @@ func (h *JobHandler) Submit(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "failed to read file: "+rerr.Error())
 			return
 		}
-		body, terr := def.InputAdapter.Transform(fileBytes, header.Header.Get("Content-Type"), def.Model, params)
+		// adapter builds the body directly (no llmproxy rewrite), so apply backend_model here
+		backendModel := def.Model
+		if def.BackendModel != "" {
+			backendModel = def.BackendModel
+		}
+		body, terr := def.InputAdapter.Transform(fileBytes, header.Header.Get("Content-Type"), backendModel, params)
 		if terr != nil {
 			writeError(w, http.StatusInternalServerError, "failed to build request: "+terr.Error())
 			return
