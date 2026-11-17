@@ -1,10 +1,14 @@
 name: Smoke tests — dev
 
-# Three ways to trigger:
+# Two ways to trigger (on-demand only — not a CI gate):
 #
-#  1. Automatic — after "Deploy — dev" succeeds (every push to develop / release/*).
-#  2. PR comment — write `/smoke-test` in any PR comment (members / collaborators only).
-#  3. Manual     — workflow_dispatch from the Actions tab.
+#  1. PR comment — write `/smoke-test` in any PR comment (members / collaborators only).
+#  2. Manual     — workflow_dispatch from the Actions tab.
+#
+# NB: these tests must run from a context that can reach the gateway. GitHub-hosted
+# runners cannot reach the private hub-llm clusters, so run them from a network with
+# access (or a self-hosted runner). The auto-trigger on deploy was removed for this
+# reason — it only ever failed at the unreachable /health readiness poll.
 #
 # Requires the following to be configured on the repository / environment:
 #
@@ -22,16 +26,11 @@ name: Smoke tests — dev
 #                            Note: rerank is not deployed in hprod — set SKIP_RERANK=1 in dev env vars
 
 on:
-  # ── 1. Auto: fires when the dev deploy finishes ─────────────────────────────
-  workflow_run:
-    workflows: ["Deploy — dev (hors-prod)"]
-    types: [completed]
-
-  # ── 2. PR comment: `/smoke-test` written on any pull request ─────────────────
+  # ── 1. PR comment: `/smoke-test` written on any pull request ─────────────────
   issue_comment:
     types: [created]
 
-  # ── 3. Manual: Actions tab → Run workflow ────────────────────────────────────
+  # ── 2. Manual: Actions tab → Run workflow ────────────────────────────────────
   workflow_dispatch:
     inputs:
       gateway_url:
@@ -64,14 +63,12 @@ jobs:
 
     # ── Guard: skip if the upstream conditions are not met ────────────────────
     #
-    # workflow_run  → only run when the deploy succeeded
     # issue_comment → only run when:
     #                   - the comment is on a pull request (not a plain issue)
     #                   - the comment body contains /smoke-test
     #                   - the author is a repo member or collaborator (not a random contributor)
     # workflow_dispatch → always run
     if: |
-      (github.event_name == 'workflow_run'   && github.event.workflow_run.conclusion == 'success') ||
       (github.event_name == 'issue_comment'  &&
        github.event.issue.pull_request       &&
        contains(github.event.comment.body, '/smoke-test') &&
@@ -81,9 +78,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # workflow_run: check out the commit that triggered the deploy
           # issue_comment / workflow_dispatch: use the default branch (develop)
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
 
       # Acknowledge the /smoke-test comment with a 🚀 reaction so the author
       # knows the workflow was picked up (only meaningful for the comment trigger).
@@ -98,35 +94,6 @@ jobs:
 
       - name: Install jq
         run: sudo apt-get install -y --no-install-recommends jq
-
-      # The deploy workflow pushes a new image; the cluster rolls out the pod.
-      # Poll /health until 200 so the tests don't start on a stale or restarting pod.
-      # Skipped for comment and manual triggers (gateway is already stable).
-      - name: Wait for gateway to be ready
-        if: github.event_name == 'workflow_run'
-        env:
-          GATEWAY_URL:     ${{ secrets.GATEWAY_URL }}
-          WHISPER_API_KEY:  ${{ secrets.WHISPER_API_KEY }}
-          RERANK_API_KEY:   ${{ secrets.RERANK_API_KEY }}
-          READY_TIMEOUT:   ${{ vars.GATEWAY_READY_TIMEOUT || '120' }}
-        run: |
-          AUTH_HEADER=""
-          [[ -n "$GATEWAY_API_KEY" ]] && AUTH_HEADER="-H apikey:${GATEWAY_API_KEY}"
-
-          echo "Waiting up to ${READY_TIMEOUT}s for ${GATEWAY_URL}/health ..."
-          ELAPSED=0
-          until [[ "$(curl -sf -o /dev/null -w "%{http_code}" \
-                       $AUTH_HEADER --max-time 5 \
-                       "${GATEWAY_URL}/health" 2>/dev/null)" == "200" ]]; do
-            if [[ $ELAPSED -ge $READY_TIMEOUT ]]; then
-              echo "::error::Gateway did not become healthy within ${READY_TIMEOUT}s"
-              exit 1
-            fi
-            echo "  ... not ready yet (${ELAPSED}s elapsed)"
-            sleep 5
-            ELAPSED=$((ELAPSED + 5))
-          done
-          echo "Gateway is ready (${ELAPSED}s)"
 
       - name: Run smoke tests
         env:
