@@ -1542,3 +1542,40 @@ func TestSubmit_InputAdapter_StoresChatJSONRaw(t *testing.T) {
 		t.Errorf("unexpected job: %+v", store.savedJob)
 	}
 }
+
+func TestSubmit_InputAdapter_AppliesBackendModel(t *testing.T) {
+	for _, tc := range []struct{ name, backend, want string }{
+		{"backend_model set", "lightonai/LightOnOCR-3-4B", "lightonai/LightOnOCR-3-4B"},
+		{"backend_model unset", "", "lighton-ocr"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := service.NewRegistry([]config.ServiceConfig{{
+				Type:          "ocr",
+				Model:         "lighton-ocr",
+				BackendModel:  tc.backend,
+				Provider:      "passthrough",
+				Operations:    map[string][]string{"ocr": {"/v1/chat/completions"}},
+				AcceptedExts:  []string{".png"},
+				MaxFileSizeMB: 10,
+				InputAdapter:  &inputadapter.Config{Type: inputadapter.TypeMultipartToChat, DefaultPrompt: "parse."},
+			}})
+			s3 := &mockJobS3{}
+			store := &mockAsyncStore{}
+			req := submitReq(t, "ocr", "lighton-ocr", "", "a.png", []byte("PNGDATA"))
+			w := httptest.NewRecorder()
+			newAsyncHandler(reg, s3, store).Submit(w, req)
+			if w.Code != http.StatusAccepted {
+				t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+			}
+			var body struct {
+				Model string `json:"model"`
+			}
+			if err := json.Unmarshal(s3.uploadBody, &body); err != nil || body.Model != tc.want {
+				t.Errorf("stored body model = %q (err %v), want %q", body.Model, err, tc.want)
+			}
+			if store.savedJob == nil || store.savedJob.Model != "lighton-ocr" {
+				t.Errorf("job.Model (queue key) must stay the alias: %+v", store.savedJob)
+			}
+		})
+	}
+}
