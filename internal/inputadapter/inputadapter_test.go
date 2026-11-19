@@ -79,6 +79,22 @@ func TestPromptFallback(t *testing.T) {
 	}
 }
 
+func TestPromptLastOrder(t *testing.T) {
+	for _, tc := range []struct {
+		promptLast bool
+		want       [2]string
+	}{
+		{false, [2]string{"text", "image_url"}},
+		{true, [2]string{"image_url", "text"}},
+	} {
+		o, _ := run(t, Config{DefaultPrompt: "p", PromptLast: tc.promptLast}, []byte("x"), "image/png", nil)
+		content := o.Messages[0].Content
+		if len(content) != 2 || content[0].Type != tc.want[0] || content[1].Type != tc.want[1] {
+			t.Errorf("prompt_last=%v: got %+v want order %v", tc.promptLast, content, tc.want)
+		}
+	}
+}
+
 func TestMaxTokens(t *testing.T) {
 	c := Config{MaxTokensField: "max_tokens", MaxTokensDefault: 100, MaxTokensCap: 500}
 	for _, tc := range []struct {

@@ -19,9 +19,11 @@ const ChatCompletionsSuffix = "/v1/chat/completions"
 
 // Config is the per-service input_adapter block.
 type Config struct {
-	Type             string         `yaml:"type"`
-	PromptField      string         `yaml:"prompt_field"`
-	DefaultPrompt    string         `yaml:"default_prompt"`
+	Type          string `yaml:"type"`
+	PromptField   string `yaml:"prompt_field"`
+	DefaultPrompt string `yaml:"default_prompt"`
+	// PromptLast places the uploaded file before the prompt text (needed by backends like LightOnOCR for grounding).
+	PromptLast       bool           `yaml:"prompt_last"`
 	MaxTokensField   string         `yaml:"max_tokens_field"`
 	MaxTokensDefault int            `yaml:"max_tokens_default"`
 	MaxTokensCap     int            `yaml:"max_tokens_cap"`
@@ -70,15 +72,15 @@ func (c *Config) Transform(fileBytes []byte, contentType, model string, params m
 		body[k] = v
 	}
 	body["model"] = model
-	body["messages"] = []any{map[string]any{
-		"role": "user",
-		"content": []any{
-			map[string]any{"type": "text", "text": prompt},
-			map[string]any{"type": "image_url", "image_url": map[string]any{
-				"url": "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(fileBytes),
-			}},
-		},
+	textItem := map[string]any{"type": "text", "text": prompt}
+	imageItem := map[string]any{"type": "image_url", "image_url": map[string]any{
+		"url": "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(fileBytes),
 	}}
+	content := []any{textItem, imageItem}
+	if c.PromptLast {
+		content = []any{imageItem, textItem}
+	}
+	body["messages"] = []any{map[string]any{"role": "user", "content": content}}
 	if maxTokens > 0 {
 		body["max_tokens"] = maxTokens
 	}

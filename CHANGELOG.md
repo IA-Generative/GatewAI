@@ -18,6 +18,14 @@ Versioning: each component is versioned independently — see tag conventions be
 
 ### [Unreleased]
 
+### [v0.28.2] — 2026-11-19
+
+Gateway `v0.28.2` · Relay `v0.14.0` · Chart `0.28.2`.
+
+#### Added
+
+- **`input_adapter.prompt_last` ordering flag.** The `multipart_to_chat` adapter emits one chat message whose `content` was always `[text, image]`. Some backends only activate special modes when the uploaded file precedes the instruction — notably LightOnOCR, whose grounding (bounding-box) output triggers only when the `grounding` prompt comes *after* the image. Setting `prompt_last: true` emits `[image, text]` instead. Default (unset) keeps the existing `[text, image]` order, so other adapter services are unaffected. Applies to both sync (`POST /v1/*` multipart) and async (`POST /jobs/{type}`).
+
 ### [v0.28.1] — 2026-11-17
 
 Gateway `v0.28.1` · Relay `v0.14.0` · Chart `0.28.1`.
