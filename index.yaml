@@ -2,6 +2,25 @@ apiVersion: v1
 entries:
   gatewai-gateway:
   - apiVersion: v2
+    appVersion: v0.28.2
+    created: "2026-11-19T16:23:56.537928155Z"
+    dependencies:
+    - name: redis-ha
+      repository: https://dandydeveloper.github.io/charts
+      version: 4.35.10
+    - alias: otlp
+      condition: otlp.enabled
+      name: opentelemetry-collector
+      repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+      version: 0.126.0
+    description: API gateway for GatewAI inference jobs
+    digest: ca4f2c4d8ac946cbb7357070a65d002e0beca2f70a7c7f1124b126bd21e306b3
+    name: gatewai-gateway
+    type: application
+    urls:
+    - https://github.com/IA-Generative/GatewAI/releases/download/gatewai-gateway-0.28.2/gatewai-gateway-0.28.2.tgz
+    version: 0.28.2
+  - apiVersion: v2
     appVersion: v0.28.1
     created: "2026-11-17T09:09:41.781794904Z"
     dependencies:
@@ -1095,4 +1114,4 @@ entries:
     urls:
     - https://github.com/Ronan-WeScale/ai-kevent/releases/download/kevent-gateway-0.2.0/kevent-gateway-0.2.0.tgz
     version: 0.2.0
-generated: "2026-11-17T09:09:41.782011108Z"
+generated: "2026-11-19T16:23:56.538198574Z"
