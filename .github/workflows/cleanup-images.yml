@@ -27,7 +27,7 @@ jobs:
       dry_run: ${{ steps.dryrun.outputs.value }}
       delete_rc_tags: ${{ steps.rc.outputs.delete_rc_tags }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve dry-run flag
         id: dryrun
