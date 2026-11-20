@@ -38,7 +38,7 @@ jobs:
     if: needs.changes.outputs.gateway == 'true'
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -52,7 +52,7 @@ jobs:
     if: needs.changes.outputs.relay == 'true'
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: relay/go.mod
           cache: true
