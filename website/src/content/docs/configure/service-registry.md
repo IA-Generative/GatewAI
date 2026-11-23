@@ -304,6 +304,7 @@ services:
       type: multipart_to_chat
       prompt_field: prompt          # client multipart form field -> user message text
       default_prompt: "document parsing."   # used when the form field is absent/empty
+      prompt_last: false            # true -> file before prompt (see note below)
       max_tokens_field: max_tokens  # optional client form field
       max_tokens_default: 4096
       max_tokens_cap: 8192          # clamp; 0 = no cap
@@ -313,6 +314,10 @@ services:
 ```
 
 The uploaded file is base64-encoded into a `data:<content-type>;base64,...` `image_url` part of a single user message (the standard OpenAI vision shape), alongside the text prompt.
+
+By default the message content is ordered `[text, image]` (prompt first). Set **`prompt_last: true`** to emit `[image, text]` instead — some backends only activate a mode when the file precedes the instruction (e.g. LightOnOCR-3-4B only emits bounding boxes / "grounding" output when the prompt comes *after* the image).
+
+The configured `prompt_field` and `max_tokens_field` are surfaced as form fields in the generated OpenAPI spec (`/openapi.yaml`, `/docs`), with the `default_prompt` shown as each adapter-backed model's default — so callers can discover them from Swagger UI.
 
 **Requirements** — config load fails with a clear error if either is missing:
 
