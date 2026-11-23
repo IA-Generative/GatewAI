@@ -6,6 +6,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"gatewai/gateway/internal/config"
+	"gatewai/gateway/internal/inputadapter"
 	"gatewai/gateway/internal/service"
 )
 
@@ -106,5 +107,81 @@ func TestGenerateSpec_SubmitJob_AnnotatesDeprecatedModelInDescription(t *testing
 	}
 	if containsStr(desc, "whisper-large-v3 (deprecated)") {
 		t.Errorf("did not expect whisper-large-v3 to be flagged deprecated, got: %s", desc)
+	}
+}
+
+func TestGenerateSpec_SubmitJob_DocumentsAdapterFields(t *testing.T) {
+	reg := service.NewRegistry([]config.ServiceConfig{
+		{
+			Type:         "llm",
+			Model:        "lighton-ocr",
+			Provider:     "passthrough",
+			InferenceURL: "http://lighton",
+			AcceptedExts: []string{".pdf", ".png"},
+			Operations:   map[string][]string{"chat": {"/v1/chat/completions"}},
+			InputAdapter: &inputadapter.Config{
+				Type:             inputadapter.TypeMultipartToChat,
+				PromptField:      "prompt",
+				DefaultPrompt:    "grounding",
+				MaxTokensField:   "max_tokens",
+				MaxTokensDefault: 4096,
+				MaxTokensCap:     8192,
+			},
+		},
+	})
+
+	spec := GenerateSpec(reg, "test", false)
+	paths := specPaths(t, spec)
+
+	item, _ := paths["/jobs/{service_type}"].(map[string]any)
+	post, _ := item["post"].(map[string]any)
+	rb, _ := post["requestBody"].(map[string]any)
+	content, _ := rb["content"].(map[string]any)
+	mp, _ := content["multipart/form-data"].(map[string]any)
+	schema, _ := mp["schema"].(map[string]any)
+	props, _ := schema["properties"].(map[string]any)
+
+	promptField, ok := props["prompt"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected a 'prompt' form field in the async submit body, got props: %v", props)
+	}
+	if pdesc, _ := promptField["description"].(string); !containsStr(pdesc, "grounding") || !containsStr(pdesc, "lighton-ocr") {
+		t.Errorf("prompt description should name the model and its default, got: %s", pdesc)
+	}
+	maxTok, ok := props["max_tokens"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected a 'max_tokens' form field in the async submit body")
+	}
+	if maxTok["type"] != "integer" {
+		t.Errorf("max_tokens should be an integer field, got type %v", maxTok["type"])
+	}
+}
+
+func TestSyncPathItems_DocumentsAdapterFields(t *testing.T) {
+	reg := service.NewRegistry([]config.ServiceConfig{{
+		Type:         "llm",
+		Model:        "lighton-ocr",
+		Provider:     "passthrough",
+		InferenceURL: "http://lighton",
+		AcceptedExts: []string{".pdf"},
+		Operations:   map[string][]string{"chat": {"/v1/chat/completions"}},
+		InputAdapter: &inputadapter.Config{
+			Type:          inputadapter.TypeMultipartToChat,
+			PromptField:   "prompt",
+			DefaultPrompt: "grounding",
+		},
+	}})
+
+	items := syncPathItems(reg)
+	item, _ := items["/v1/chat/completions"].(map[string]any)
+	post, _ := item["post"].(map[string]any)
+	rb, _ := post["requestBody"].(map[string]any)
+	content, _ := rb["content"].(map[string]any)
+	mp, _ := content["multipart/form-data"].(map[string]any)
+	schema, _ := mp["schema"].(map[string]any)
+	props, _ := schema["properties"].(map[string]any)
+
+	if _, ok := props["prompt"].(map[string]any); !ok {
+		t.Errorf("expected a 'prompt' form field on sync POST /v1/chat/completions, got props: %v", props)
 	}
 }

@@ -311,6 +311,71 @@ func healthPathItem() map[string]any {
 	}
 }
 
+// adapterFormProps builds OpenAPI multipart form properties for the input_adapter
+// text fields (prompt, max_tokens) exposed by the given service defs. These are not
+// part of the generic job/sync body — they apply only to adapter-backed models — so
+// each is documented with the models it applies to and its configured default.
+func adapterFormProps(defs []*service.Def) map[string]any {
+	type fieldInfo struct {
+		models   []string
+		defaults []string
+	}
+	promptFields := map[string]*fieldInfo{}
+	maxTokFields := map[string]*fieldInfo{}
+	get := func(m map[string]*fieldInfo, name string) *fieldInfo {
+		fi := m[name]
+		if fi == nil {
+			fi = &fieldInfo{}
+			m[name] = fi
+		}
+		return fi
+	}
+	for _, d := range defs {
+		a := d.InputAdapter
+		if a == nil {
+			continue
+		}
+		if a.PromptField != "" {
+			fi := get(promptFields, a.PromptField)
+			fi.models = appendUniq(fi.models, d.Model)
+			if a.DefaultPrompt != "" {
+				fi.defaults = appendUniq(fi.defaults, fmt.Sprintf("`%s` → %q", d.Model, a.DefaultPrompt))
+			}
+		}
+		if a.MaxTokensField != "" {
+			fi := get(maxTokFields, a.MaxTokensField)
+			fi.models = appendUniq(fi.models, d.Model)
+			if a.MaxTokensDefault > 0 {
+				d := fmt.Sprintf("`%s` → %d", d.Model, a.MaxTokensDefault)
+				if a.MaxTokensCap > 0 {
+					d += fmt.Sprintf(" (max %d)", a.MaxTokensCap)
+				}
+				fi.defaults = appendUniq(fi.defaults, d)
+			}
+		}
+	}
+	props := map[string]any{}
+	for name, fi := range promptFields {
+		sort.Strings(fi.models)
+		desc := "Prompt text sent to the model (adapter-backed models only: " + strings.Join(fi.models, ", ") + ")."
+		if len(fi.defaults) > 0 {
+			sort.Strings(fi.defaults)
+			desc += " Default when omitted — " + strings.Join(fi.defaults, "; ") + "."
+		}
+		props[name] = map[string]any{"type": "string", "description": desc}
+	}
+	for name, fi := range maxTokFields {
+		sort.Strings(fi.models)
+		desc := "Maximum tokens to generate (adapter-backed models only: " + strings.Join(fi.models, ", ") + ")."
+		if len(fi.defaults) > 0 {
+			sort.Strings(fi.defaults)
+			desc += " Default — " + strings.Join(fi.defaults, "; ") + "."
+		}
+		props[name] = map[string]any{"type": "integer", "description": desc}
+	}
+	return props
+}
+
 func submitJobPathItem(serviceTypes []string, reg *service.Registry) map[string]any {
 	// Collect models and operations per service type.
 	modelsByType := map[string][]string{}
@@ -374,6 +439,13 @@ func submitJobPathItem(serviceTypes []string, reg *service.Registry) map[string]
 			"type":        "string",
 			"enum":        allOps,
 			"description": opDesc,
+		}
+	}
+
+	// Expose input_adapter text fields (e.g. prompt, max_tokens) for adapter-backed models.
+	for name, prop := range adapterFormProps(reg.All()) {
+		if _, exists := schemaProps[name]; !exists {
+			schemaProps[name] = prop
 		}
 	}
 
@@ -725,6 +797,7 @@ func syncPathItems(reg *service.Registry) map[string]any {
 		opNames          []string
 		exts             []string
 		isPattern        bool
+		adapterDefs      []*service.Def
 	}
 
 	byPath := map[string]*entry{}
@@ -751,6 +824,9 @@ func syncPathItems(reg *service.Registry) map[string]any {
 				e.opNames = appendUniq(e.opNames, opName)
 				if def.Deprecated {
 					e.deprecatedModels[def.Model] = true
+				}
+				if def.InputAdapter != nil {
+					e.adapterDefs = append(e.adapterDefs, def)
 				}
 				for ext := range def.AcceptedExts {
 					e.exts = appendUniq(e.exts, ext)
@@ -808,6 +884,13 @@ func syncPathItems(reg *service.Registry) map[string]any {
 		}
 		schemaProps["file"] = fileField
 		required = append(required, "file")
+
+		// Expose input_adapter text fields (e.g. prompt, max_tokens) for adapter-backed models.
+		for name, prop := range adapterFormProps(e.adapterDefs) {
+			if _, exists := schemaProps[name]; !exists {
+				schemaProps[name] = prop
+			}
+		}
 
 		// Summary from operation names
 		summary := strings.Join(e.opNames, " / ")
